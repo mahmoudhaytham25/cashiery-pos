@@ -1,8 +1,5 @@
 # Ignore node_modules everywhere
 **/node_modules/
 
-# Ignore all package-lock.json files
-**/package-lock.json
-
 # Environment variables
 **/.env

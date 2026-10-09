@@ -56,4 +56,4 @@ npm start              # http://localhost:3000
 
 ## License
 
-See [LICENSE.txt](LICENSE.txt).
+See [LICENSE](LICENSE).
