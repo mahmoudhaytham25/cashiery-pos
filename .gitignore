@@ -3,3 +3,6 @@
 
 # Ignore all package-lock.json files
 **/package-lock.json
+
+# Environment variables
+**/.env
