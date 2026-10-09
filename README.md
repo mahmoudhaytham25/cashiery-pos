@@ -1,5 +1,7 @@
 # Cashiery — POS & Inventory Management System
 
+[![CI](https://github.com/mahmoudhaytham25/cashiery-pos/actions/workflows/ci.yml/badge.svg)](https://github.com/mahmoudhaytham25/cashiery-pos/actions/workflows/ci.yml)
+
 A full-stack point-of-sale and inventory management web application with dual roles: a cashier interface for day-to-day sales and a manager dashboard for inventory control and reporting.
 
 ## Features
