@@ -3,6 +3,12 @@ const express = require('express');
 const cors = require('cors');
 const db = require('./database/db'); // Initialize database connection
 
+// Fail fast if required environment variables are missing
+if (!process.env.JWT_SECRET) {
+  console.error('Error: JWT_SECRET environment variable is not set');
+  process.exit(1);
+}
+
 const app = express();
 
 // Middleware

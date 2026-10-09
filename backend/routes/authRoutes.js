@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const db = require('../database/db');
+const { authMiddleware, adminAuth } = require('../middleware/authMiddleware');
 const { JWT_SECRET } = process.env;
 
 // Login
@@ -15,7 +16,7 @@ router.post('/login', async (req, res) => {
     const validPassword = await bcrypt.compare(password, user.rows[0].password);
     if (!validPassword) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign({ id: user.rows[0].id, role: user.rows[0].role }, JWT_SECRET);
+    const token = jwt.sign({ id: user.rows[0].id, role: user.rows[0].role }, JWT_SECRET, { expiresIn: '12h' });
     res.json({ 
       token, 
       id: user.rows[0].id,
@@ -28,7 +29,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Register (Admin-only)
-router.post('/register', async (req, res) => {
+router.post('/register', authMiddleware, adminAuth, async (req, res) => {
   const { username, password, role } = req.body;
   if (role !== 'cashier' && role !== 'admin') return res.status(400).json({ error: 'Invalid role' });
 

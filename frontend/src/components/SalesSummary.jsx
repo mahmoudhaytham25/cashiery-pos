@@ -15,6 +15,7 @@ function SalesSummary() {
 
     apiRequest(`/transactions/summary?date=${todayStr}`, "GET")
       .then(data => setSummary(data))
+      .catch(() => setSummary(null))
       .finally(() => setLoading(false));
   }, []);
 
@@ -24,8 +25,8 @@ function SalesSummary() {
   return (
     <div>
       <h3>Daily Sales Summary</h3>
-      <div>Total Sales: ${summary.totalSales}</div>
-      <div>Transactions: {summary.transactionCount}</div>
+      <div>Total Sales: ${summary.totalSales || 0}</div>
+      <div>Transactions: {summary.transactionCount || 0}</div>
     </div>
   );
 }

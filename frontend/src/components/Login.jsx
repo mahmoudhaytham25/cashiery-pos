@@ -22,7 +22,7 @@ function Login() {
         login(data.token, data.role); // Replace localStorage calls
         window.location.href = data.role === "admin" ? "/admin" : "/pos";
       } else {
-        setError(data.message || "Login failed");
+        setError(data.error || "Login failed");
       }
     } catch (err) {
       setError("Network error");

@@ -4,7 +4,7 @@ const db = require('../database/db');
 const { authMiddleware, adminAuth } = require('../middleware/authMiddleware');
 
 // Get all products (Cashier/Admin)
-router.get('/', async (req, res) => {
+router.get('/', authMiddleware, async (req, res) => {
   try {
     const search = req.query.search;
     let products;
@@ -36,7 +36,7 @@ router.post('/', authMiddleware, adminAuth, async (req, res) => { // Add authMid
   }
 });
 
-router.get('/low-stock', async (req, res) => {
+router.get('/low-stock', authMiddleware, async (req, res) => {
   try {
     const products = await db.query(
       'SELECT * FROM products WHERE stock < 10'

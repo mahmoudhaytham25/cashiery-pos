@@ -32,6 +32,11 @@ export const apiRequest = async (endpoint, method = "GET", body = null) => {
     const data = await response.json();
 
     if (!response.ok) {
+      if (response.status === 401) {
+        // Token is expired/invalid - clear it and send the user to login
+        removeToken();
+        window.location.href = "/login";
+      }
       throw new Error(data.error || data.message || "API request failed");
     }
 
