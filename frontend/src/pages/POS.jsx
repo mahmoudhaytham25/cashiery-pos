@@ -36,19 +36,16 @@ function POS() {
 
   return (
     <div>
-      <h2>Point of Sale System</h2>
+      <h2 className="page-title">Point of Sale System</h2>
+      <p className="page-subtitle">Search products, build a cart and process payment.</p>
       <div className="pos-layout">
-        <div>
-          <ProductSearch onAddToCart={handleAddToCart} refreshKey={refreshKey} />
-        </div>
-        <div>
-          <Cart
-            cart={cart}
-            onRemove={handleRemove}
-            onProcessPayment={handleProcessPayment}
-            setCart={setCart}
-          />
-        </div>
+        <ProductSearch onAddToCart={handleAddToCart} refreshKey={refreshKey} />
+        <Cart
+          cart={cart}
+          onRemove={handleRemove}
+          onProcessPayment={handleProcessPayment}
+          setCart={setCart}
+        />
       </div>
     </div>
   );

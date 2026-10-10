@@ -21,7 +21,7 @@ function SalesSummary() {
   );
 
   return (
-    <div className="sales-summary">
+    <div className="sales-summary card">
       <h3>Daily Sales Summary</h3>
       <FormField
         id="sales-date"
@@ -30,9 +30,10 @@ function SalesSummary() {
         value={date}
         max={todayString()}
         onChange={e => setDate(e.target.value)}
+        className="form-input"
       />
       {loading ? (
-        <p>Loading sales summary...</p>
+        <p className="empty-state">Loading sales summary...</p>
       ) : error ? (
         <StatusMessage type="error" onRetry={refetch}>
           {error}
@@ -40,9 +41,17 @@ function SalesSummary() {
       ) : !summary ? (
         <p className="empty-state">No sales data available for {date}.</p>
       ) : (
-        <div>
-          <div>Total Sales: {formatCurrency(summary.totalSales || 0)}</div>
-          <div>Transactions: {summary.transactionCount || 0}</div>
+        <div className="summary-stats">
+          <div className="stat">
+            <span className="stat-label">Total Sales</span>
+            <span className="stat-value">
+              {formatCurrency(summary.totalSales || 0)}
+            </span>
+          </div>
+          <div className="stat">
+            <span className="stat-label">Transactions</span>
+            <span className="stat-value">{summary.transactionCount || 0}</span>
+          </div>
         </div>
       )}
     </div>

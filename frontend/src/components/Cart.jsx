@@ -49,7 +49,7 @@ function Cart({ cart, onRemove, onProcessPayment, setCart }) {
   const atStockCap = (item) => item.stock != null && item.quantity >= item.stock;
 
   return (
-    <div>
+    <div className="cart card">
       <h3>Cart ({cart.length} items)</h3>
       {message && <StatusMessage type="success">{message}</StatusMessage>}
       {error && <StatusMessage type="error">{error}</StatusMessage>}
@@ -57,17 +57,17 @@ function Cart({ cart, onRemove, onProcessPayment, setCart }) {
         <p className="empty-state">Cart is empty</p>
       ) : (
         <>
-          <ul>
+          <ul className="cart-items scroll-list">
             {cart.map(item => (
-              <li key={item.id}>
-                <div>
-                  <strong>{item.name}</strong>
-                  <div>
-                    Price: {formatCurrency(item.price)} each
+              <li key={item.id} className="cart-item">
+                <div className="cart-item-info">
+                  <strong className="cart-item-name">{item.name}</strong>
+                  <div className="cart-item-meta">
+                    {formatCurrency(item.price)} each
                   </div>
-                  <div>
-                    Quantity:
+                  <div className="qty-row">
                     <button
+                      className="qty-btn"
                       onClick={() => updateQuantity(item.id, item.quantity - 1)}
                       aria-label={`Decrease quantity of ${item.name}`}
                     >
@@ -75,6 +75,7 @@ function Cart({ cart, onRemove, onProcessPayment, setCart }) {
                     </button>
                     <span className="qty-value">{item.quantity}</span>
                     <button
+                      className="qty-btn"
                       onClick={() => updateQuantity(item.id, item.quantity + 1)}
                       disabled={atStockCap(item)}
                       aria-label={`Increase quantity of ${item.name}`}
@@ -85,18 +86,27 @@ function Cart({ cart, onRemove, onProcessPayment, setCart }) {
                   {atStockCap(item) && (
                     <div className="stock-note">Only {item.stock} in stock</div>
                   )}
-                  <div>
-                    Subtotal: {formatCurrency(item.price * item.quantity)}
-                  </div>
                 </div>
-                <button onClick={() => onRemove(item.id)}>Remove</button>
+                <div className="cart-item-side">
+                  <span className="cart-item-subtotal">
+                    {formatCurrency(item.price * item.quantity)}
+                  </span>
+                  <button
+                    className="remove-btn btn-sm"
+                    onClick={() => onRemove(item.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
           <div className="cart-total">
-            Total: {formatCurrency(total)}
+            <span>Total</span>
+            <span className="cart-total-amount">{formatCurrency(total)}</span>
           </div>
           <button
+            className="pay-btn"
             onClick={handleProcessPayment}
             disabled={cart.length === 0 || submitting}
           >

@@ -26,7 +26,7 @@ function UserRegistration() {
   };
 
   return (
-    <div>
+    <div className="user-registration card">
       <h3>Register New User</h3>
       <form onSubmit={handleRegister}>
         <FormField
@@ -36,6 +36,7 @@ function UserRegistration() {
           onChange={e => setUsername(e.target.value)}
           autoComplete="off"
           required
+          className="form-input"
         />
         <FormField
           id="reg-password"
@@ -45,11 +46,13 @@ function UserRegistration() {
           onChange={e => setPassword(e.target.value)}
           autoComplete="new-password"
           required
+          className="form-input"
         />
         <div className="form-group">
           <label htmlFor="reg-role">Role</label>
           <select
             id="reg-role"
+            className="form-input"
             value={role}
             onChange={e => setRole(e.target.value)}
           >
@@ -57,7 +60,7 @@ function UserRegistration() {
             <option value="admin">Admin</option>
           </select>
         </div>
-        <button type="submit" disabled={submitting}>
+        <button type="submit" className="submit-btn" disabled={submitting}>
           {submitting ? "Registering..." : "Register"}
         </button>
       </form>

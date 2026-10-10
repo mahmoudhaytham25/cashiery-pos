@@ -33,31 +33,37 @@ function Login() {
   };
 
   return (
-    <div>
-      <h2>Login</h2>
-      <form onSubmit={handleLogin}>
-        <FormField
-          id="login-username"
-          label="Username"
-          value={username}
-          onChange={e => setUsername(e.target.value)}
-          autoComplete="username"
-          required
-        />
-        <FormField
-          id="login-password"
-          label="Password"
-          type="password"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          autoComplete="current-password"
-          required
-        />
-        <button type="submit" disabled={submitting}>
-          {submitting ? "Logging in..." : "Login"}
-        </button>
-      </form>
-      {error && <StatusMessage type="error">{error}</StatusMessage>}
+    <div className="login-page">
+      <div className="login-card card">
+        <div className="login-brand">Cashiery</div>
+        <h2 className="login-title">Sign in</h2>
+        <p className="login-subtitle">Enter your credentials to continue.</p>
+        <form onSubmit={handleLogin}>
+          <FormField
+            id="login-username"
+            label="Username"
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            autoComplete="username"
+            required
+            className="form-input"
+          />
+          <FormField
+            id="login-password"
+            label="Password"
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            autoComplete="current-password"
+            required
+            className="form-input"
+          />
+          <button type="submit" className="btn-block" disabled={submitting}>
+            {submitting ? "Logging in..." : "Login"}
+          </button>
+        </form>
+        {error && <StatusMessage type="error">{error}</StatusMessage>}
+      </div>
     </div>
   );
 }

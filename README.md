@@ -4,6 +4,12 @@
 
 A full-stack point-of-sale and inventory management web application with dual roles: a cashier interface for day-to-day sales and a manager dashboard for inventory control and reporting.
 
+## Screenshots
+
+| Point of Sale | Admin Dashboard |
+| --- | --- |
+| ![POS interface — product search and receipt-style cart](docs/screenshots/pos.png) | ![Admin dashboard — inventory, sales and user management](docs/screenshots/admin.png) |
+
 ## Features
 
 **Cashier interface**

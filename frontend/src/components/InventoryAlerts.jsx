@@ -12,19 +12,25 @@ function InventoryAlerts({ refreshTrigger }) {
   const alerts = data ?? [];
 
   if (loading && alerts.length === 0) {
-    return <div>Loading inventory alerts...</div>;
+    return (
+      <div className="inventory-alerts card">
+        <p className="empty-state">Loading inventory alerts...</p>
+      </div>
+    );
   }
 
   if (error) {
     return (
-      <StatusMessage type="error" onRetry={refetch}>
-        Error: {error}
-      </StatusMessage>
+      <div className="inventory-alerts card">
+        <StatusMessage type="error" onRetry={refetch}>
+          Error: {error}
+        </StatusMessage>
+      </div>
     );
   }
 
   return (
-    <div className="inventory-alerts">
+    <div className="inventory-alerts card">
       <h3>Low Stock Alerts</h3>
       {alerts.length === 0 ? (
         <p className="empty-state">No products with critically low stock.</p>
@@ -32,8 +38,11 @@ function InventoryAlerts({ refreshTrigger }) {
         <ul>
           {alerts.map(product => (
             <li key={product.id}>
-              <strong>{product.name}</strong> - Only {product.stock} units left
-              {product.sku && ` (SKU: ${product.sku})`}
+              <span className="alert-text">
+                <strong>{product.name}</strong>
+                {product.sku && <span className="sku">SKU {product.sku}</span>}
+              </span>
+              <span className="badge badge-warn">{product.stock} left</span>
             </li>
           ))}
         </ul>

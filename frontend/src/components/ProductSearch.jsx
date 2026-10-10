@@ -47,7 +47,7 @@ function ProductSearch({ onAddToCart, refreshKey = 0 }) {
   const loadAllProducts = () => fetchProducts("");
 
   return (
-    <div className="product-search">
+    <div className="product-search card">
       <h3>Product Search</h3>
       <form onSubmit={handleSearch}>
         <FormField
@@ -56,11 +56,12 @@ function ProductSearch({ onAddToCart, refreshKey = 0 }) {
           placeholder="Search products by name or scan barcode"
           value={query}
           onChange={e => setQuery(e.target.value)}
+          className="form-input"
         />
         <button type="submit" disabled={loading}>
           {loading ? "Searching..." : "Search"}
         </button>
-        <button type="button" onClick={loadAllProducts} disabled={loading}>
+        <button type="button" className="btn-ghost" onClick={loadAllProducts} disabled={loading}>
           Show All Products
         </button>
       </form>
@@ -68,11 +69,12 @@ function ProductSearch({ onAddToCart, refreshKey = 0 }) {
       {error && <StatusMessage type="error">{error}</StatusMessage>}
 
       {results.length > 0 ? (
-        <ul>
+        <ul className="product-results scroll-list">
           {results.map(product => (
             <li key={product.id}>
               <ProductInfo product={product} />
               <button
+                className="btn-sm"
                 onClick={() => onAddToCart(product)}
                 disabled={product.stock <= 0}
               >

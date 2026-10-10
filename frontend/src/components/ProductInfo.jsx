@@ -6,12 +6,16 @@ export const LOW_STOCK_THRESHOLD = 10;
 function ProductInfo({ product, lowStock = false }) {
   return (
     <div className="product-info">
-      <strong className="product-name">{product.name}</strong>
-      <div className="product-detail">Price: {formatCurrency(product.price)}</div>
-      <div className={`product-detail ${lowStock ? "low-stock" : ""}`}>
-        Stock: {product.stock}
+      <strong className="product-name">
+        {product.name}
+        {lowStock && <span className="low-stock">Low stock</span>}
+      </strong>
+      <div className="product-detail">
+        {formatCurrency(product.price)} · {product.stock} in stock
+        {product.sku && (
+          <span className="product-sku"> · {product.sku}</span>
+        )}
       </div>
-      {product.sku && <div className="product-detail">SKU: {product.sku}</div>}
     </div>
   );
 }

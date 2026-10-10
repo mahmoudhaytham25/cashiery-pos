@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { useAuth } from '../context/AuthContext';
 
 function Navbar() {
@@ -8,17 +8,25 @@ function Navbar() {
   if (!user) {
     return (
       <nav>
-        <Link to="/login">Login</Link>
+        <Link to="/" className="nav-brand">Cashiery</Link>
+        <div className="nav-user">
+          <NavLink to="/login">Login</NavLink>
+        </div>
       </nav>
     );
   }
 
   return (
     <nav>
-      <span className="nav-greeting">Welcome, {user.username || user.role}!</span>
-      <Link to="/pos">POS</Link>
-      {user.role === "admin" && <Link to="/admin">Admin Dashboard</Link>}
-      <button onClick={logout}>Logout</button>
+      <Link to="/" className="nav-brand">Cashiery</Link>
+      <div className="nav-links">
+        <NavLink to="/pos">POS</NavLink>
+        {user.role === "admin" && <NavLink to="/admin">Admin Dashboard</NavLink>}
+      </div>
+      <div className="nav-user">
+        <span className="nav-greeting">Welcome, {user.username || user.role}!</span>
+        <button className="nav-logout" onClick={logout}>Logout</button>
+      </div>
     </nav>
   );
 }

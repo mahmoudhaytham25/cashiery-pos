@@ -133,11 +133,15 @@ function ProductManagement({ onProductChange }) {
   };
 
   if (loading && products.length === 0) {
-    return <div>Loading products...</div>;
+    return (
+      <div className="product-management card">
+        <p className="empty-state">Loading products...</p>
+      </div>
+    );
   }
 
   return (
-    <div className="product-management">
+    <div className="product-management card">
       <h3>Product Management</h3>
 
       <form onSubmit={handleSubmit} className="product-form">
@@ -204,7 +208,7 @@ function ProductManagement({ onProductChange }) {
         {products.length === 0 ? (
           <p className="no-products">No products found.</p>
         ) : (
-          <ul className="products">
+          <ul className="products scroll-list">
             {products.map(product => (
               <li key={product.id} className="product-item">
                 <ProductInfo
@@ -214,13 +218,13 @@ function ProductManagement({ onProductChange }) {
                 <div className="product-actions">
                   <button
                     onClick={() => handleEdit(product)}
-                    className="edit-btn"
+                    className="edit-btn btn-sm"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => handleDelete(product.id)}
-                    className={`delete-btn ${confirmDeleteId === product.id ? 'confirm' : ''}`}
+                    className={`delete-btn btn-sm ${confirmDeleteId === product.id ? 'confirm' : ''}`}
                   >
                     {confirmDeleteId === product.id ? "Confirm?" : "Delete"}
                   </button>
