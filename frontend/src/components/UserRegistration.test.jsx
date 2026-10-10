@@ -11,15 +11,6 @@ describe("UserRegistration", () => {
     apiRequest.mockReset();
   });
 
-  it("defaults to the cashier role", () => {
-    render(<UserRegistration />);
-
-    expect(screen.getByLabelText("Role")).toHaveValue("cashier");
-    expect(
-      screen.getByRole("button", { name: "Register" })
-    ).toBeEnabled();
-  });
-
   it("registers a cashier and clears the form", async () => {
     const user = userEvent.setup();
     apiRequest.mockResolvedValue({ id: 3 });

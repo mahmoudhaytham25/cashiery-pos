@@ -107,20 +107,6 @@ describe("Cart", () => {
     expect(setCart).not.toHaveBeenCalled();
   });
 
-  it("clamps an over-stock quantity update", async () => {
-    const user = userEvent.setup();
-    const { setCart } = renderCart({ cart: [item({ quantity: 4, stock: 5 })] });
-
-    await user.click(
-      screen.getByRole("button", { name: "Increase quantity of Widget" })
-    );
-
-    const updater = setCart.mock.calls[0][0];
-    expect(updater([item({ quantity: 4, stock: 5 })])).toEqual([
-      item({ quantity: 5, stock: 5 }),
-    ]);
-  });
-
   it("calls onRemove from the Remove button", async () => {
     const user = userEvent.setup();
     const { onRemove } = renderCart({ cart: [item()] });

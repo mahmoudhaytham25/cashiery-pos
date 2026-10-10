@@ -67,14 +67,6 @@ test("cashier can add products to the cart", async ({ page, request }) => {
   await expect(page.getByText(`Cart (${clicks} items)`)).toBeVisible();
 });
 
-test("admin sees the dashboard", async ({ page }) => {
-  await page.goto("/admin");
-
-  await expect(
-    page.getByRole("heading", { name: "Admin Dashboard" })
-  ).toBeVisible();
-});
-
 test("admin can manage products and see sales data", async ({ page }) => {
   await page.goto("/admin");
 

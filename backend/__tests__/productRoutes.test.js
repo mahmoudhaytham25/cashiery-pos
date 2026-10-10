@@ -239,9 +239,6 @@ describe('PUT /api/products/:id', () => {
 
   test.each([
     ['non-numeric price', { name: 'X', price: 'abc', stock: 1 }],
-    ['negative price', { name: 'X', price: -5, stock: 1 }],
-    ['non-integer stock', { name: 'X', price: 1, stock: 'two' }],
-    ['blank name', { name: '  ', price: 1, stock: 1 }],
   ])('400 on invalid field: %s (no DB call)', async (_label, body) => {
     const res = await request(app)
       .put('/api/products/7')

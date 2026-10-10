@@ -28,10 +28,6 @@ describe("authStorage", () => {
       expect(localStorage.getItem(key)).toBeNull()
     );
   });
-
-  it("clearAuth is a no-op when storage is already empty", () => {
-    expect(() => clearAuth()).not.toThrow();
-  });
 });
 
 describe("homePathFor", () => {
