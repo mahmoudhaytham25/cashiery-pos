@@ -74,3 +74,43 @@ test("admin sees the dashboard", async ({ page }) => {
     page.getByRole("heading", { name: "Admin Dashboard" })
   ).toBeVisible();
 });
+
+test("admin can manage products and see sales data", async ({ page }) => {
+  await page.goto("/admin");
+
+  await expect(
+    page.getByRole("heading", { name: "Admin Dashboard" })
+  ).toBeVisible();
+
+  // The sales/inventory sections render for the admin regardless of data.
+  await expect(
+    page.getByRole("heading", { name: "Low Stock Alerts" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Daily Sales Summary" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Transaction Log" })
+  ).toBeVisible();
+
+  // Add a product through the real ProductManagement form.
+  const productName = `E2E Product ${Date.now()}`;
+  await page.locator("#pm-name").fill(productName);
+  await page.locator("#pm-price").fill("4.25");
+  await page.locator("#pm-stock").fill("30");
+  await page.locator("#pm-sku").fill("E2E-SKU");
+  await page.getByRole("button", { name: "Add Product" }).click();
+
+  await expect(page.getByText("Product added successfully.")).toBeVisible();
+  await expect(
+    page.locator(".product-item", { hasText: productName })
+  ).toBeVisible();
+
+  // Register a cashier through the real UserRegistration form.
+  const cashier = `e2e-cashier-${Date.now()}`;
+  await page.locator("#reg-username").fill(cashier);
+  await page.locator("#reg-password").fill("e2e-cashier-pass");
+  await page.getByRole("button", { name: "Register" }).click();
+
+  await expect(page.getByText("User registered successfully!")).toBeVisible();
+});
