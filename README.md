@@ -49,7 +49,7 @@ docker compose up --build
 - DB credentials default to dev values; override with `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
 
 ### Prerequisites (local dev)
-- Node.js 16+
+- Node.js 24+ (LTS)
 - PostgreSQL
 
 ### Backend

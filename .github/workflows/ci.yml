@@ -12,13 +12,32 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
       - name: Install dependencies
         working-directory: backend
-        run: npm install
+        run: npm ci
       - name: Run tests
         working-directory: backend
         run: npx jest
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build
+        working-directory: frontend
+        env:
+          # Same rationale as frontend/Dockerfile — fresh resolution can pull an
+          # eslint-plugin-jest that breaks eslint-config-react-app's overrides.
+          DISABLE_ESLINT_PLUGIN: "true"
+          CI: "false" # don't fail the build on warnings
+        run: npm run build
 
   migrations:
     runs-on: ubuntu-latest
@@ -47,10 +66,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
       - name: Install dependencies
         working-directory: backend
-        run: npm install
+        run: npm ci
       - name: Smoke test migrations (up -> down -> up)
         working-directory: backend
         run: |
