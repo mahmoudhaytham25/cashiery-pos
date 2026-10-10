@@ -1,0 +1,50 @@
+# Cashiery POS — full stack via Docker Compose.
+#   docker compose up --build
+# Frontend: http://localhost:3000  |  Backend API: http://localhost:5000
+#
+# Credentials below are DEV-ONLY defaults, overridable via shell env or a
+# .env file at the repo root (docker compose reads it automatically):
+#   POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, JWT_SECRET
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cashiery}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cashiery-dev-password}
+      POSTGRES_DB: ${POSTGRES_DB:-cashiery}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # Init script: runs ONLY on first boot of a fresh volume. To re-seed:
+      #   docker compose down -v && docker compose up --build
+      - ./backend/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    # DB is not published to the host on purpose (avoids clashing with a
+    # local PostgreSQL on port 5432). Uncomment if you need host access:
+    # ports:
+    #   - "5432:5432"
+
+  backend:
+    build: ./backend
+    environment:
+      PORT: 5000
+      DB_HOST: db
+      DB_USER: ${POSTGRES_USER:-cashiery}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-cashiery-dev-password}
+      DB_NAME: ${POSTGRES_DB:-cashiery}
+      # REQUIRED by index.js. DEV-ONLY fallback — set a real secret via
+      # `JWT_SECRET=... docker compose up` or a root .env file.
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me}
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db  # pg Pool connects lazily and recovers once postgres is ready
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
