@@ -348,7 +348,14 @@ nav a.active {
 
 .admin-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.admin-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 1.5rem;
   align-items: start;
 }
@@ -781,7 +788,8 @@ li:last-child {
 
 /* Responsive */
 @media (max-width: 960px) {
-  .pos-layout {
+  .pos-layout,
+  .admin-layout {
     grid-template-columns: 1fr;
   }
 }

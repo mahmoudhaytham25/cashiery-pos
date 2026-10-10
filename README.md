@@ -51,6 +51,7 @@ docker compose up --build
 - Frontend: http://localhost:3000 · Backend API: http://localhost:5001 (host port is 5001 because macOS AirPlay Receiver occupies :5000; override with `BACKEND_PORT`)
 - The backend container waits for Postgres, applies any pending database migrations (`node-pg-migrate`, see `backend/migrations/`), then starts the API — all handled by `backend/docker-entrypoint.sh` on every startup. To reset the DB entirely: `docker compose down -v && docker compose up --build`.
 - First run: register via the app's sign-up form (or `POST /api/auth/register`). The very first account is created as `admin` automatically — registration is admin-gated afterwards.
+- A fresh database also gets a small demo product catalog (`backend/scripts/seed.js`, runs only while the products table is empty — two items are low-stock so the alerts card shows data). Set `SEED_PRODUCTS=0` to skip it.
 - `JWT_SECRET` is required by the backend and falls back to a dev-only value in `docker-compose.yml`. For anything real, set it via `JWT_SECRET=your-secret docker compose up` or a `.env` file at the repo root.
 - DB credentials default to dev values; override with `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
 
@@ -65,6 +66,7 @@ npm install
 cp .env.example .env   # fill in your DB credentials and JWT secret
 createdb your_db_name  # create the database (or: psql -c "CREATE DATABASE your_db_name;")
 npm run migrate:up     # create/update the schema via node-pg-migrate
+npm run seed           # optional: demo catalog (only if products table is empty)
 npm start              # http://localhost:5000
 ```
 

@@ -17,11 +17,13 @@ function AdminDashboard() {
       <h2 className="page-title">Admin Dashboard</h2>
       <p className="page-subtitle">Manage products and users, and review sales activity.</p>
       <div className="admin-layout">
-        <InventoryAlerts refreshTrigger={refreshKey} />
-        <SalesSummary />
+        <div className="admin-cards">
+          <InventoryAlerts refreshTrigger={refreshKey} />
+          <SalesSummary />
+          <TransactionLog />
+          <UserRegistration />
+        </div>
         <ProductManagement onProductChange={handleProductChange} />
-        <TransactionLog />
-        <UserRegistration />
       </div>
     </div>
   );

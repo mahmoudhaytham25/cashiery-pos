@@ -39,6 +39,9 @@ services:
       # REQUIRED by index.js. DEV-ONLY fallback — set a real secret via
       # `JWT_SECRET=... docker compose up` or a root .env file.
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me}
+      # Set SEED_PRODUCTS=0 to keep a fresh database empty (skips the
+      # first-run demo catalog in scripts/seed.js).
+      SEED_PRODUCTS: ${SEED_PRODUCTS:-true}
     ports:
       - "${BACKEND_PORT:-5001}:5000"  # host :5000 is AirPlay Receiver on macOS
     depends_on:

@@ -20,5 +20,10 @@ echo "[entrypoint] database is ready"
 echo "[entrypoint] running migrations (node-pg-migrate)..."
 node scripts/migrate.js up
 
+# No-op unless the products table is empty; SEED_PRODUCTS=0 disables.
+# Non-fatal: a seeding hiccup shouldn't keep the API from starting.
+echo "[entrypoint] seeding demo catalog (first run only)..."
+node scripts/seed.js || echo "[entrypoint] seed failed — continuing without demo catalog"
+
 echo "[entrypoint] starting server"
 exec node index.js
