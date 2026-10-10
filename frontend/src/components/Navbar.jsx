@@ -15,8 +15,8 @@ function Navbar() {
 
   return (
     <nav>
-      <span>Welcome, {user.role}!</span>
-      {user.role === "cashier" && <Link to="/pos">POS</Link>}
+      <span className="nav-greeting">Welcome, {user.username || user.role}!</span>
+      <Link to="/pos">POS</Link>
       {user.role === "admin" && <Link to="/admin">Admin Dashboard</Link>}
       <button onClick={logout}>Logout</button>
     </nav>

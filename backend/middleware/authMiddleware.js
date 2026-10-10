@@ -4,7 +4,8 @@ const { JWT_SECRET } = process.env;
 
 // Middleware to validate JWT token and attach user role to the request
 const authMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
+  const parts = req.headers.authorization?.split(' ') || [];
+  const token = parts.length === 2 && parts[0] === 'Bearer' ? parts[1] : null;
   if (!token) return res.status(401).json({ error: 'No token provided' });
 
   try {
@@ -32,6 +33,7 @@ const firstUserOrAdmin = async (req, res, next) => {
   try {
     const { rows } = await db.query('SELECT COUNT(*)::int AS n FROM users');
     if (rows[0].n === 0) {
+      req.isBootstrap = true; // handler re-checks under an advisory lock
       req.body.role = 'admin';
       return next();
     }

@@ -35,6 +35,15 @@ describe('authMiddleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  test('401 when the scheme is not Bearer', () => {
+    const token = signToken({ id: 7, role: 'cashier' });
+    const req = { headers: { authorization: `Basic ${token}` } };
+    authMiddleware(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: 'No token provided' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
   test('401 on a malformed/garbage token', () => {
     const req = { headers: { authorization: 'Bearer not.a.real.token' } };
     authMiddleware(req, res, next);

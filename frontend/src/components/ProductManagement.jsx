@@ -1,29 +1,54 @@
-import React, { useState, useEffect } from "react";
-import { apiRequest } from "../api/api";
+import React, { useState, useEffect, useRef } from "react";
+import { apiRequest, normalizeProducts } from "../api/api";
+import { formatCurrency } from "../utils/format";
+
+const EMPTY_FORM = { name: "", price: "", stock: "", SKU: "" };
 
 function ProductManagement({ onProductChange }) {
   const [products, setProducts] = useState([]);
-  const [form, setForm] = useState({ name: "", price: "", stock: "", SKU: "" });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     fetchProducts();
+    return () => { mountedRef.current = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-dismiss transient success messages.
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(""), 4000);
+    return () => clearTimeout(timer);
+  }, [message]);
+
+  // Revert "Confirm?" delete buttons after a few seconds.
+  useEffect(() => {
+    if (confirmDeleteId == null) return;
+    const timer = setTimeout(() => setConfirmDeleteId(null), 4000);
+    return () => clearTimeout(timer);
+  }, [confirmDeleteId]);
 
   const fetchProducts = async () => {
     setLoading(true);
     try {
       const data = await apiRequest("/products");
-      const sortedProducts = [...(data.products || data || [])].sort((a, b) => 
+      if (!mountedRef.current) return;
+      const sortedProducts = normalizeProducts(data).sort((a, b) =>
         a.name.localeCompare(b.name)
       );
       setProducts(sortedProducts);
     } catch (err) {
+      if (!mountedRef.current) return;
       setError("Failed to fetch products: " + err.message);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
 
@@ -33,46 +58,81 @@ function ProductManagement({ onProductChange }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     setError("");
-    
+    setMessage("");
+
+    const name = form.name.trim();
+    const price = parseFloat(form.price);
+    const stock = parseInt(form.stock, 10);
+
+    if (!name) {
+      setError("Product name is required.");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      setError("Price must be a valid non-negative number.");
+      return;
+    }
+    if (!Number.isInteger(stock) || stock < 0) {
+      setError("Stock must be a whole number (0 or greater).");
+      return;
+    }
+
+    setSubmitting(true);
     try {
       const productData = {
-        name: form.name,
-        price: parseFloat(form.price),
-        stock: parseInt(form.stock),
-        SKU: form.SKU.trim() === "" ? null : form.SKU
+        name,
+        price,
+        stock,
+        SKU: form.SKU.trim() === "" ? null : form.SKU.trim()
       };
 
       if (editingId) {
         await apiRequest(`/products/${editingId}`, "PUT", productData);
+        setMessage("Product updated successfully.");
         setEditingId(null);
       } else {
         await apiRequest("/products", "POST", productData);
+        setMessage("Product added successfully.");
       }
-      
-      setForm({ name: "", price: "", stock: "", SKU: "" });
+
+      setForm(EMPTY_FORM);
       await fetchProducts();
       if (onProductChange) onProductChange();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleEdit = (product) => {
     setForm({
       name: product.name,
-      price: product.price.toString(),
-      stock: product.stock.toString(),
-      SKU: product.SKU || product.sku || ""
+      price: String(product.price),
+      stock: String(product.stock),
+      SKU: product.sku || ""
     });
     setEditingId(product.id);
+    setError("");
+    setMessage("");
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this product?")) return;
-    
+    // Inline confirm: first click turns the button into "Confirm?".
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id);
+      return;
+    }
+    setConfirmDeleteId(null);
+    setError("");
+    setMessage("");
+
     try {
       await apiRequest(`/products/${id}`, "DELETE");
+      if (id === editingId) cancelEdit();
+      setMessage("Product deleted.");
       await fetchProducts();
       if (onProductChange) onProductChange();
     } catch (err) {
@@ -81,7 +141,7 @@ function ProductManagement({ onProductChange }) {
   };
 
   const cancelEdit = () => {
-    setForm({ name: "", price: "", stock: "", SKU: "" });
+    setForm(EMPTY_FORM);
     setEditingId(null);
   };
 
@@ -92,12 +152,13 @@ function ProductManagement({ onProductChange }) {
   return (
     <div className="product-management">
       <h3>Product Management</h3>
-      
+
       <form onSubmit={handleSubmit} className="product-form">
         <div className="form-group">
+          <label htmlFor="pm-name">Product Name</label>
           <input
+            id="pm-name"
             name="name"
-            placeholder="Product Name"
             value={form.name}
             onChange={handleChange}
             required
@@ -105,9 +166,10 @@ function ProductManagement({ onProductChange }) {
           />
         </div>
         <div className="form-group">
+          <label htmlFor="pm-price">Price</label>
           <input
+            id="pm-price"
             name="price"
-            placeholder="Price"
             value={form.price}
             onChange={handleChange}
             required
@@ -118,29 +180,34 @@ function ProductManagement({ onProductChange }) {
           />
         </div>
         <div className="form-group">
+          <label htmlFor="pm-stock">Stock Quantity</label>
           <input
+            id="pm-stock"
             name="stock"
-            placeholder="Stock Quantity"
             value={form.stock}
             onChange={handleChange}
             required
             type="number"
+            step="1"
             min="0"
             className="form-input"
           />
         </div>
         <div className="form-group">
+          <label htmlFor="pm-sku">SKU (optional)</label>
           <input
+            id="pm-sku"
             name="SKU"
-            placeholder="SKU (optional)"
             value={form.SKU}
             onChange={handleChange}
             className="form-input"
           />
         </div>
         <div className="form-actions">
-          <button type="submit" className="submit-btn">
-            {editingId ? "Update Product" : "Add Product"}
+          <button type="submit" className="submit-btn" disabled={submitting}>
+            {submitting
+              ? "Saving..."
+              : editingId ? "Update Product" : "Add Product"}
           </button>
           {editingId && (
             <button type="button" onClick={cancelEdit} className="cancel-btn">
@@ -150,6 +217,7 @@ function ProductManagement({ onProductChange }) {
         </div>
       </form>
 
+      {message && <div className="success-message">{message}</div>}
       {error && <div className="error-message">{error}</div>}
 
       <div className="product-list">
@@ -162,26 +230,26 @@ function ProductManagement({ onProductChange }) {
               <li key={product.id} className="product-item">
                 <div className="product-info">
                   <strong className="product-name">{product.name}</strong>
-                  <div className="product-detail">Price: ${typeof product.price === 'number' ? product.price.toFixed(2) : parseFloat(product.price).toFixed(2)}</div>
+                  <div className="product-detail">Price: {formatCurrency(product.price)}</div>
                   <div className={`product-detail ${product.stock < 10 ? 'low-stock' : ''}`}>
                     Stock: {product.stock}
                   </div>
-                  {(product.SKU || product.sku) && (
-                    <div className="product-detail">SKU: {product.SKU || product.sku}</div>
+                  {product.sku && (
+                    <div className="product-detail">SKU: {product.sku}</div>
                   )}
                 </div>
                 <div className="product-actions">
-                  <button 
-                    onClick={() => handleEdit(product)} 
+                  <button
+                    onClick={() => handleEdit(product)}
                     className="edit-btn"
                   >
                     Edit
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleDelete(product.id)}
-                    className="delete-btn"
+                    className={`delete-btn ${confirmDeleteId === product.id ? 'confirm' : ''}`}
                   >
-                    Delete
+                    {confirmDeleteId === product.id ? "Confirm?" : "Delete"}
                   </button>
                 </div>
               </li>

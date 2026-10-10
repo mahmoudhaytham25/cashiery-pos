@@ -7,19 +7,28 @@ function UserRegistration() {
   const [role, setRole] = useState("cashier");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     setMessage("");
     setError("");
+    setSubmitting(true);
     try {
-      await apiRequest("/auth/register", "POST", { username, password, role });
+      await apiRequest("/auth/register", "POST", {
+        username: username.trim(),
+        password,
+        role,
+      });
       setMessage("User registered successfully!");
       setUsername("");
       setPassword("");
       setRole("cashier");
     } catch (err) {
       setError(err.message || "Registration failed");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -27,28 +36,45 @@ function UserRegistration() {
     <div>
       <h3>Register New User</h3>
       <form onSubmit={handleRegister}>
-        <input
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={e => setUsername(e.target.value)}
-          required
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          required
-        />
-        <select value={role} onChange={e => setRole(e.target.value)}>
-          <option value="cashier">Cashier</option>
-          <option value="admin">Admin</option>
-        </select>
-        <button type="submit">Register</button>
+        <div className="form-group">
+          <label htmlFor="reg-username">Username</label>
+          <input
+            id="reg-username"
+            type="text"
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            autoComplete="off"
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label htmlFor="reg-password">Password</label>
+          <input
+            id="reg-password"
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            autoComplete="new-password"
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label htmlFor="reg-role">Role</label>
+          <select
+            id="reg-role"
+            value={role}
+            onChange={e => setRole(e.target.value)}
+          >
+            <option value="cashier">Cashier</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <button type="submit" disabled={submitting}>
+          {submitting ? "Registering..." : "Register"}
+        </button>
       </form>
-      {message && <div style={{ color: "green" }}>{message}</div>}
-      {error && <div style={{ color: "red" }}>{error}</div>}
+      {message && <div className="success-message">{message}</div>}
+      {error && <div className="error-message">{error}</div>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Container entrypoint: wait for Postgres -> apply node-pg-migrate migrations
-# -> start the API. Runs on every container start; `migrate:up` is a no-op
+# -> start the API. Runs on every container start; `migrate up` is a no-op
 # when the schema is already current, so restarts are safe.
 set -e
 
@@ -18,7 +18,7 @@ done
 echo "[entrypoint] database is ready"
 
 echo "[entrypoint] running migrations (node-pg-migrate)..."
-npm run migrate:up
+node scripts/migrate.js up
 
 echo "[entrypoint] starting server"
 exec node index.js

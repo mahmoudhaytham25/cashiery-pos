@@ -23,6 +23,7 @@ const ADMIN = bearer(adminToken());
 
 beforeEach(() => {
   jest.resetAllMocks();
+  jest.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 describe('POST /api/transactions', () => {
@@ -62,6 +63,79 @@ describe('POST /api/transactions', () => {
       error: 'Each item must have a valid productId and a positive integer quantity',
     });
     expect(db.connect).not.toHaveBeenCalled();
+  });
+
+  test('400 when items exceed the 100-item cap (no DB call)', async () => {
+    const items = Array.from({ length: 101 }, () => ({ productId: 1, quantity: 1 }));
+
+    const res = await request(app)
+      .post('/api/transactions')
+      .set(CASHIER)
+      .send({ items });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Too many items (max 100)' });
+    expect(db.connect).not.toHaveBeenCalled();
+  });
+
+  test('merges duplicate productIds and locks rows in ascending order', async () => {
+    const txnRow = { id: 60, cashier_id: 2, total: '12.50', timestamp: '2024-06-01T00:00:00Z' };
+    const { client, calls } = createMockClient([
+      {},                                                // BEGIN
+      { rows: [{ id: 1, name: 'Coke', price: '2.50' }] },// item 1 SELECT
+      { rows: [], rowCount: 1 },                         // item 1 UPDATE
+      { rows: [{ id: 2, name: 'Pepsi', price: '2.50' }] },// item 2 SELECT
+      { rows: [], rowCount: 1 },                         // item 2 UPDATE
+      { rows: [txnRow], rowCount: 1 },                   // INSERT transactions
+      { rows: [], rowCount: 1 },                         // INSERT item 1
+      { rows: [], rowCount: 1 },                         // INSERT item 2
+      {},                                                // COMMIT
+    ]);
+    db.connect.mockResolvedValue(client);
+
+    const res = await request(app)
+      .post('/api/transactions')
+      .set(CASHIER)
+      // Product 2 is listed first and product 1 appears twice on purpose.
+      .send({ items: [
+        { productId: 2, quantity: 1 },
+        { productId: 1, quantity: 1 },
+        { productId: 1, quantity: 2 },
+      ] });
+
+    expect(res.status).toBe(201);
+
+    // Locks happen in ascending productId order regardless of request order,
+    // and the duplicate productId was merged into a single qty-3 update.
+    const selects = calls.filter((c) => /FOR UPDATE/.test(c.text));
+    expect(selects[0].params).toEqual([1]);
+    expect(selects[1].params).toEqual([2]);
+    const updates = calls.filter((c) => /UPDATE products SET stock/.test(c.text));
+    expect(updates).toHaveLength(2);
+    expect(updates[0].params).toEqual([3, 1]);
+    expect(updates[1].params).toEqual([1, 2]);
+
+    // total = 3*2.50 + 1*2.50 = 10 — computed in integer cents.
+    const txnInsert = firstMatch(calls, /INSERT INTO transactions/);
+    expect(txnInsert.params).toEqual([2, 10]);
+    const itemInserts = calls.filter((c) => /INSERT INTO transaction_items/.test(c.text));
+    expect(itemInserts).toHaveLength(2);
+    expect(itemInserts[0].params).toEqual([60, 1, 3, 2.5]);
+    expect(itemInserts[1].params).toEqual([60, 2, 1, 2.5]);
+    expect(wasIssued(calls, 'COMMIT')).toBe(true);
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('500 when the pool cannot hand out a client (no client.release crash)', async () => {
+    db.connect.mockRejectedValue(new Error('pool exhausted'));
+
+    const res = await request(app)
+      .post('/api/transactions')
+      .set(CASHIER)
+      .send({ items: [{ productId: 1, quantity: 1 }] });
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Transaction failed' });
   });
 
   test('400 + ROLLBACK when a product does not exist', async () => {
@@ -190,7 +264,7 @@ describe('POST /api/transactions', () => {
     expect(client.release).toHaveBeenCalledTimes(1);
   });
 
-  test('400 + ROLLBACK when a query inside the transaction throws', async () => {
+  test('500 + ROLLBACK when a query inside the transaction throws', async () => {
     const { client, calls } = createMockClient([
       {},                              // BEGIN
       new Error('connection lost'),    // SELECT throws
@@ -202,7 +276,7 @@ describe('POST /api/transactions', () => {
       .set(CASHIER)
       .send({ items: [{ productId: 1, quantity: 1 }] });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: 'Transaction failed' });
     expect(wasIssued(calls, 'ROLLBACK')).toBe(true);
     expect(wasIssued(calls, 'COMMIT')).toBe(false);
@@ -269,8 +343,24 @@ describe('GET /api/transactions/summary', () => {
     expect(res.body).toEqual({ totalSales: '123.45', transactionCount: '4' });
     const [sql, params] = db.query.mock.calls[0];
     expect(sql).toMatch(/SUM\(total\)/i);
+    // Sargable half-open range instead of DATE("timestamp") = $1
+    expect(sql).toContain('"timestamp" >= $1::date');
+    expect(sql).toContain(`"timestamp" < $1::date + interval '1 day'`);
     expect(params).toEqual(['2024-06-01']);
   });
+
+  test.each(['2024/06/01', 'not-a-date', '06-01-2024', '2024-6-1'])(
+    '400 on malformed ?date=%s (no DB call)',
+    async (date) => {
+      const res = await request(app)
+        .get(`/api/transactions/summary?date=${date}`)
+        .set(ADMIN);
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: 'Invalid date format (expected YYYY-MM-DD)' });
+      expect(db.query).not.toHaveBeenCalled();
+    }
+  );
 
   test('200 defaults to today when ?date= is absent', async () => {
     db.query.mockResolvedValue({ rows: [{ totalSales: null, transactionCount: '0' }] });

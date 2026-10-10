@@ -4,7 +4,7 @@ const db = require('../database/db');
 const { authMiddleware, adminAuth } = require('../middleware/authMiddleware');
 
 
-// Create transaction (Cashier-only)
+// Create transaction (any authenticated user — cashiers and admins)
 router.post('/', authMiddleware, async (req, res) => {
   const { items } = req.body;
   const cashierId = req.user.id; // Always use authenticated user id
@@ -13,6 +13,9 @@ router.post('/', authMiddleware, async (req, res) => {
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Items are required' });
   }
+  if (items.length > 100) {
+    return res.status(400).json({ error: 'Too many items (max 100)' });
+  }
   for (const item of items) {
     if (!Number.isInteger(item.productId) || item.productId <= 0 ||
         !Number.isInteger(item.quantity) || item.quantity <= 0) {
@@ -20,14 +23,25 @@ router.post('/', authMiddleware, async (req, res) => {
     }
   }
 
-  const client = await db.connect();
+  // Merge duplicate productIds and sort ascending so concurrent checkouts
+  // always lock product rows in the same order (prevents deadlocks).
+  const qtyByProduct = new Map();
+  for (const item of items) {
+    qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) || 0) + item.quantity);
+  }
+  const sortedItems = [...qtyByProduct.entries()]
+    .map(([productId, quantity]) => ({ productId, quantity }))
+    .sort((a, b) => a.productId - b.productId);
+
+  let client;
   try {
+    client = await db.connect();
     await client.query('BEGIN');
 
-    // Compute total from DB prices and decrement stock atomically
-    let total = 0;
+    // Compute total in integer cents from DB prices and decrement stock atomically
+    let totalCents = 0;
     const lineItems = [];
-    for (const item of items) {
+    for (const item of sortedItems) {
       const product = await client.query(
         'SELECT id, name, price FROM products WHERE id = $1 FOR UPDATE',
         [item.productId]
@@ -47,10 +61,10 @@ router.post('/', authMiddleware, async (req, res) => {
       }
 
       const unitPrice = parseFloat(product.rows[0].price);
-      total += unitPrice * item.quantity;
+      totalCents += Math.round(unitPrice * 100) * item.quantity;
       lineItems.push({ productId: item.productId, quantity: item.quantity, unitPrice });
     }
-    total = Math.round(total * 100) / 100;
+    const total = totalCents / 100;
 
     // Insert transaction
     const transaction = await client.query(
@@ -69,10 +83,11 @@ router.post('/', authMiddleware, async (req, res) => {
     await client.query('COMMIT');
     res.status(201).json(transaction.rows[0]);
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    res.status(400).json({ error: 'Transaction failed' });
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    console.error(err);
+    res.status(500).json({ error: 'Transaction failed' });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 // Get all transactions (Admin-only)
@@ -97,6 +112,9 @@ router.get('/summary', authMiddleware, adminAuth, async (req, res) => {
     const dateParam = req.query.date;
     let dateStr;
     if (dateParam) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+        return res.status(400).json({ error: 'Invalid date format (expected YYYY-MM-DD)' });
+      }
       dateStr = dateParam;
     } else {
       const today = new Date();
@@ -106,12 +124,13 @@ router.get('/summary', authMiddleware, adminAuth, async (req, res) => {
       dateStr = `${yyyy}-${mm}-${dd}`;
     }
 
+    // Half-open date range keeps the WHERE clause sargable (index on "timestamp" stays usable).
     const summary = await db.query(
       `SELECT 
          SUM(total) AS "totalSales", 
          COUNT(*) AS "transactionCount"
        FROM transactions
-       WHERE DATE("timestamp") = $1`,
+       WHERE "timestamp" >= $1::date AND "timestamp" < $1::date + interval '1 day'`,
       [dateStr]
     );
 

@@ -12,12 +12,12 @@ function App() {
     <AuthProvider>
       <Router>
         <Navbar />
-        <div style={{ padding: '1rem' }}>
+        <div className="app-main">
           <Routes>
-            <Route path="/" element={<Navigate to="/login" />} />
+            <Route path="/" element={<HomeRedirect />} />
             <Route path="/login" element={<Login />} />
             <Route path="/pos" element={
-              <ProtectedRoute role="cashier">
+              <ProtectedRoute>
                 <POS />
               </ProtectedRoute>
             }/>
@@ -34,10 +34,19 @@ function App() {
   );
 }
 
+function HomeRedirect() {
+  const { user } = useAuth();
+  const target = !user ? "/login" : user.role === "admin" ? "/admin" : "/pos";
+  return <Navigate to={target} replace />;
+}
+
 function ProtectedRoute({ children, role }) {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/login" />;
-  if (role && user.role !== role) return <Navigate to="/login" />;
+  if (!user) return <Navigate to="/login" replace />;
+  // Wrong role — send the user to their own home page, not back to login.
+  if (role && user.role !== role) {
+    return <Navigate to={user.role === "admin" ? "/admin" : "/pos"} replace />;
+  }
   return children;
 }
 

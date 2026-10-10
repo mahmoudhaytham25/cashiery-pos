@@ -12,6 +12,7 @@ const app = buildApp();
 
 beforeEach(() => {
   jest.resetAllMocks();
+  jest.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 describe('GET /api/products', () => {
@@ -34,7 +35,7 @@ describe('GET /api/products', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual(rows);
-    expect(db.query).toHaveBeenCalledWith('SELECT * FROM products ORDER BY name');
+    expect(db.query).toHaveBeenCalledWith('SELECT * FROM products ORDER BY name LIMIT 500');
   });
 
   test('200 uses an ILIKE filter when ?search= is given', async () => {
@@ -46,7 +47,7 @@ describe('GET /api/products', () => {
 
     expect(res.status).toBe(200);
     expect(db.query).toHaveBeenCalledWith(
-      'SELECT * FROM products WHERE name ILIKE $1 ORDER BY name',
+      'SELECT * FROM products WHERE name ILIKE $1 ORDER BY name LIMIT 500',
       ['%coke%']
     );
   });
@@ -75,8 +76,47 @@ describe('GET /api/products/low-stock', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual(rows);
     expect(db.query).toHaveBeenCalledWith(
-      'SELECT * FROM products WHERE stock < 10'
+      'SELECT * FROM products WHERE stock < $1 LIMIT 500',
+      [10]
     );
+  });
+
+  test('200 honors ?threshold= and clamps it to the max', async () => {
+    db.query.mockResolvedValue({ rows: [] });
+
+    const res = await request(app)
+      .get('/api/products/low-stock?threshold=25')
+      .set(bearer(cashierToken()));
+
+    expect(res.status).toBe(200);
+    expect(db.query).toHaveBeenCalledWith(
+      'SELECT * FROM products WHERE stock < $1 LIMIT 500',
+      [25]
+    );
+  });
+
+  test('200 caps an oversized ?threshold= at 1000', async () => {
+    db.query.mockResolvedValue({ rows: [] });
+
+    const res = await request(app)
+      .get('/api/products/low-stock?threshold=99999')
+      .set(bearer(cashierToken()));
+
+    expect(res.status).toBe(200);
+    expect(db.query).toHaveBeenCalledWith(
+      'SELECT * FROM products WHERE stock < $1 LIMIT 500',
+      [1000]
+    );
+  });
+
+  test.each(['abc', '-5', '2.5'])('400 on invalid ?threshold=%s (no DB call)', async (threshold) => {
+    const res = await request(app)
+      .get(`/api/products/low-stock?threshold=${threshold}`)
+      .set(bearer(cashierToken()));
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'threshold must be a positive integer' });
+    expect(db.query).not.toHaveBeenCalled();
   });
 });
 
@@ -98,8 +138,9 @@ describe('POST /api/products', () => {
     expect(db.query).not.toHaveBeenCalled();
   });
 
-  test('201 inserts the product for an admin', async () => {
-    db.query.mockResolvedValue({ rows: [], rowCount: 1 });
+  test('201 inserts the product for an admin and returns the created row', async () => {
+    const created = { id: 5, ...product };
+    db.query.mockResolvedValue({ rows: [created], rowCount: 1 });
 
     const res = await request(app)
       .post('/api/products')
@@ -107,11 +148,45 @@ describe('POST /api/products', () => {
       .send(product);
 
     expect(res.status).toBe(201);
-    expect(res.body).toEqual({ message: 'Product added' });
+    expect(res.body).toEqual(created);
     expect(db.query).toHaveBeenCalledWith(
-      'INSERT INTO products (name, price, stock, SKU) VALUES ($1, $2, $3, $4)',
+      'INSERT INTO products (name, price, stock, SKU) VALUES ($1, $2, $3, $4) RETURNING *',
       ['Fanta', 1.75, 20, 'FAN-001']
     );
+  });
+
+  test('201 stores a blank/whitespace SKU as NULL', async () => {
+    const created = { id: 5, ...product, SKU: null };
+    db.query.mockResolvedValue({ rows: [created], rowCount: 1 });
+
+    const res = await request(app)
+      .post('/api/products')
+      .set(bearer(adminToken()))
+      .send({ ...product, SKU: '   ' });
+
+    expect(res.status).toBe(201);
+    expect(db.query).toHaveBeenCalledWith(
+      'INSERT INTO products (name, price, stock, SKU) VALUES ($1, $2, $3, $4) RETURNING *',
+      ['Fanta', 1.75, 20, null]
+    );
+  });
+
+  test.each([
+    ['missing name', { price: 1, stock: 1 }],
+    ['empty name', { name: '   ', price: 1, stock: 1 }],
+    ['non-numeric price', { name: 'X', price: 'abc', stock: 1 }],
+    ['negative price', { name: 'X', price: -1, stock: 1 }],
+    ['non-integer stock', { name: 'X', price: 1, stock: 1.5 }],
+    ['negative stock', { name: 'X', price: 1, stock: -1 }],
+  ])('400 on invalid body: %s (no DB call)', async (_label, body) => {
+    const res = await request(app)
+      .post('/api/products')
+      .set(bearer(adminToken()))
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeTruthy();
+    expect(db.query).not.toHaveBeenCalled();
   });
 
   test('400 when the insert fails (e.g. duplicate SKU)', async () => {
@@ -128,6 +203,17 @@ describe('POST /api/products', () => {
 });
 
 describe('PUT /api/products/:id', () => {
+  test('400 on a non-integer :id (no DB call)', async () => {
+    const res = await request(app)
+      .put('/api/products/abc')
+      .set(bearer(adminToken()))
+      .send({ name: 'X', price: 1, stock: 1 });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Invalid product id' });
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
   test('403 for a cashier', async () => {
     const res = await request(app)
       .put('/api/products/7')
@@ -145,6 +231,22 @@ describe('PUT /api/products/:id', () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'Missing required fields' });
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['non-numeric price', { name: 'X', price: 'abc', stock: 1 }],
+    ['negative price', { name: 'X', price: -5, stock: 1 }],
+    ['non-integer stock', { name: 'X', price: 1, stock: 'two' }],
+    ['blank name', { name: '  ', price: 1, stock: 1 }],
+  ])('400 on invalid field: %s (no DB call)', async (_label, body) => {
+    const res = await request(app)
+      .put('/api/products/7')
+      .set(bearer(adminToken()))
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeTruthy();
     expect(db.query).not.toHaveBeenCalled();
   });
 
@@ -193,9 +295,31 @@ describe('PUT /api/products/:id', () => {
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'SKU must be unique' });
   });
+
+  test('500 on a generic failure does not leak DB internals', async () => {
+    db.query.mockRejectedValue(new Error('relation "products" does not exist'));
+
+    const res = await request(app)
+      .put('/api/products/7')
+      .set(bearer(adminToken()))
+      .send({ name: 'X', price: 1, stock: 1, SKU: 'X-1' });
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Failed to update product' });
+  });
 });
 
 describe('DELETE /api/products/:productId', () => {
+  test('400 on a non-integer :productId (no DB call)', async () => {
+    const res = await request(app)
+      .delete('/api/products/abc')
+      .set(bearer(adminToken()));
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Invalid product id' });
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
   test('403 for a cashier', async () => {
     const res = await request(app)
       .delete('/api/products/7')

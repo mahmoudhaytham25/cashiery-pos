@@ -13,6 +13,7 @@ jest.mock('dotenv', () => ({ config: jest.fn() }));
 const mockApp = {
   use: jest.fn(),
   get: jest.fn(),
+  set: jest.fn(),
   listen: jest.fn(),
 };
 
@@ -28,11 +29,13 @@ describe('index.js startup', () => {
   let exitSpy;
   let errorSpy;
   let savedSecret;
+  let savedPort;
 
   beforeEach(() => {
     jest.resetModules();   // re-run index.js fresh in each test
     jest.clearAllMocks();
     savedSecret = process.env.JWT_SECRET;
+    savedPort = process.env.PORT;
     exitSpy = jest.spyOn(process, 'exit').mockImplementation((code) => {
       throw new Error(`process.exit(${code})`);
     });
@@ -43,6 +46,8 @@ describe('index.js startup', () => {
   afterEach(() => {
     if (savedSecret === undefined) delete process.env.JWT_SECRET;
     else process.env.JWT_SECRET = savedSecret;
+    if (savedPort === undefined) delete process.env.PORT;
+    else process.env.PORT = savedPort;
     jest.restoreAllMocks();
   });
 
@@ -57,7 +62,7 @@ describe('index.js startup', () => {
 
   test('mounts all routers and starts listening when JWT_SECRET is set', () => {
     process.env.JWT_SECRET = 'present';
-    process.env.PORT = '0';
+    process.env.PORT = '5050';
 
     require('../index');
 
@@ -69,6 +74,7 @@ describe('index.js startup', () => {
       expect.arrayContaining(['/api/auth', '/api/products', '/api/transactions'])
     );
     expect(mockApp.listen).toHaveBeenCalledTimes(1);
-    expect(mockApp.listen).toHaveBeenCalledWith('0', expect.any(Function));
+    // PORT is parsed with Number(); the listen call gets a numeric port.
+    expect(mockApp.listen).toHaveBeenCalledWith(5050, expect.any(Function));
   });
 });

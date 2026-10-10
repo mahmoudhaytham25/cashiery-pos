@@ -1,55 +1,69 @@
-import React, { useState } from "react";
-import { apiRequest } from '../api/api';
+import React, { useEffect, useRef, useState } from "react";
+import { apiRequest, normalizeProducts } from '../api/api';
+import { formatCurrency } from "../utils/format";
 
-function ProductSearch({ onAddToCart }) {
+function ProductSearch({ onAddToCart, refreshKey = 0 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fetched, setFetched] = useState(false); // a result list is on screen
+  const mountedRef = useRef(true);
+
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
+  const fetchProducts = async (searchTerm) => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const endpoint = searchTerm
+        ? `/products?search=${encodeURIComponent(searchTerm)}`
+        : "/products";
+      const data = await apiRequest(endpoint);
+      if (!mountedRef.current) return;
+      setResults(normalizeProducts(data));
+      setFetched(true);
+    } catch (err) {
+      if (!mountedRef.current) return;
+      setError((searchTerm ? "Search failed: " : "Failed to load products: ") + err.message);
+      setResults([]);
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  };
+
+  // POS bumps refreshKey after a successful checkout — refetch the current
+  // list so stock values reflect the sale.
+  useEffect(() => {
+    if (refreshKey > 0 && fetched) {
+      fetchProducts(query.trim());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) return;
-
-    setLoading(true);
-    setError("");
-    
-    try {
-      const data = await apiRequest(`/products?search=${encodeURIComponent(query)}`);
-      setResults(data.products || data || []);
-    } catch (err) {
-      setError("Search failed: " + err.message);
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
+    fetchProducts(query.trim());
   };
 
-  const loadAllProducts = async () => {
-    setLoading(true);
-    setError("");
-    
-    try {
-      const data = await apiRequest('/products');
-      setResults(data.products || data || []);
-    } catch (err) {
-      setError("Failed to load products: " + err.message);
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const loadAllProducts = () => fetchProducts("");
 
   return (
-    <div>
+    <div className="product-search">
       <h3>Product Search</h3>
       <form onSubmit={handleSearch}>
-        <input
-          type="text"
-          placeholder="Search products by name or scan barcode"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-        />
+        <div className="form-group">
+          <label htmlFor="product-search-input">Product name or barcode</label>
+          <input
+            id="product-search-input"
+            type="text"
+            placeholder="Search products by name or scan barcode"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+        </div>
         <button type="submit" disabled={loading}>
           {loading ? "Searching..." : "Search"}
         </button>
@@ -57,20 +71,20 @@ function ProductSearch({ onAddToCart }) {
           Show All Products
         </button>
       </form>
-      
-      {error && <div className="error">{error}</div>}
-      
+
+      {error && <div className="error-message">{error}</div>}
+
       {results.length > 0 ? (
         <ul>
           {results.map(product => (
             <li key={product.id}>
               <div>
                 <strong>{product.name}</strong>
-                <div>Price: ${product.price}</div>
+                <div>Price: {formatCurrency(product.price)}</div>
                 <div>Stock: {product.stock}</div>
                 {product.sku && <div>SKU: {product.sku}</div>}
               </div>
-              <button 
+              <button
                 onClick={() => onAddToCart(product)}
                 disabled={product.stock <= 0}
               >
@@ -79,8 +93,12 @@ function ProductSearch({ onAddToCart }) {
             </li>
           ))}
         </ul>
-      ) : !loading && query && (
-        <p>No products found for "{query}"</p>
+      ) : (
+        !loading && fetched && (
+          <p className="empty-state">
+            No products found{query.trim() ? ` for "${query.trim()}"` : ""}.
+          </p>
+        )
       )}
     </div>
   );

@@ -10,6 +10,7 @@
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-cashiery}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cashiery-dev-password}
@@ -27,6 +28,8 @@ services:
 
   backend:
     build: ./backend
+    init: true # tini reaps zombies and forwards SIGTERM to node for graceful shutdown
+    restart: unless-stopped
     environment:
       PORT: 5000
       DB_HOST: db
@@ -40,10 +43,11 @@ services:
       - "${BACKEND_PORT:-5001}:5000"  # host :5000 is AirPlay Receiver on macOS
     depends_on:
       - db  # backend/docker-entrypoint.sh waits for postgres, runs
-        # `npm run migrate:up`, then starts the server
+        # `node scripts/migrate.js up`, then starts the server
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:
