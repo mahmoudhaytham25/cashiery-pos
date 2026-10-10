@@ -25,4 +25,20 @@ const adminAuth = (req, res, next) => {
   next();
 };
 
-module.exports = { authMiddleware, adminAuth };
+// Bootstrap path: allows the very first registration unauthenticated and
+// forces it to admin (otherwise a fresh install could never log in).
+// Once any user exists, falls through to the normal admin-only check.
+const firstUserOrAdmin = async (req, res, next) => {
+  try {
+    const { rows } = await db.query('SELECT COUNT(*)::int AS n FROM users');
+    if (rows[0].n === 0) {
+      req.body.role = 'admin';
+      return next();
+    }
+    authMiddleware(req, res, () => adminAuth(req, res, next));
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+module.exports = { authMiddleware, adminAuth, firstUserOrAdmin };

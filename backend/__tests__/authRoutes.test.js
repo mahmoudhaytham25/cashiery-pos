@@ -88,16 +88,26 @@ describe('POST /api/auth/login', () => {
 });
 
 describe('POST /api/auth/register', () => {
-  test('401 without a token', async () => {
+  // The register middleware first runs `SELECT COUNT(*)::int AS n FROM users`.
+  // n > 0 → normal admin-only path; n = 0 → unauthenticated bootstrap,
+  // role forced to admin.
+  const usersExist = { rows: [{ n: 1 }] };
+
+  test('401 without a token once users exist', async () => {
+    db.query.mockResolvedValueOnce(usersExist);
+
     const res = await request(app)
       .post('/api/auth/register')
       .send({ username: 'new', password: 'pw', role: 'cashier' });
 
     expect(res.status).toBe(401);
-    expect(db.query).not.toHaveBeenCalled();
+    // Only the count query ran — no insert.
+    expect(db.query).toHaveBeenCalledTimes(1);
   });
 
-  test('403 with a cashier (non-admin) token', async () => {
+  test('403 with a cashier (non-admin) token once users exist', async () => {
+    db.query.mockResolvedValueOnce(usersExist);
+
     const res = await request(app)
       .post('/api/auth/register')
       .set(bearer(cashierToken()))
@@ -105,10 +115,12 @@ describe('POST /api/auth/register', () => {
 
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: 'Admin access required' });
-    expect(db.query).not.toHaveBeenCalled();
+    expect(db.query).toHaveBeenCalledTimes(1);
   });
 
   test('400 with an admin token but an invalid role', async () => {
+    db.query.mockResolvedValueOnce(usersExist);
+
     const res = await request(app)
       .post('/api/auth/register')
       .set(bearer(adminToken()))
@@ -116,12 +128,32 @@ describe('POST /api/auth/register', () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'Invalid role' });
-    expect(db.query).not.toHaveBeenCalled();
+    expect(db.query).toHaveBeenCalledTimes(1);
+  });
+
+  test('201 bootstrap: no token + empty users table creates an admin', async () => {
+    bcrypt.hash.mockResolvedValue('hashed_pw');
+    db.query
+      .mockResolvedValueOnce({ rows: [{ n: 0 }] })   // count → empty
+      .mockResolvedValue({ rows: [], rowCount: 1 }); // insert
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ username: 'first', password: 'plaintext', role: 'cashier' });
+
+    expect(res.status).toBe(201);
+    // Requested 'cashier' but the middleware must force 'admin'.
+    expect(db.query).toHaveBeenLastCalledWith(
+      'INSERT INTO users (username, password, role) VALUES ($1, $2, $3)',
+      ['first', 'hashed_pw', 'admin']
+    );
   });
 
   test('201 creates the user with a bcrypt-hashed password', async () => {
     bcrypt.hash.mockResolvedValue('hashed_pw');
-    db.query.mockResolvedValue({ rows: [], rowCount: 1 });
+    db.query
+      .mockResolvedValueOnce(usersExist)
+      .mockResolvedValue({ rows: [], rowCount: 1 });
 
     const res = await request(app)
       .post('/api/auth/register')
@@ -132,7 +164,7 @@ describe('POST /api/auth/register', () => {
     expect(res.body).toEqual({ message: 'User created' });
     expect(bcrypt.hash).toHaveBeenCalledWith('plaintext', 10);
     // The plaintext password must never reach the database.
-    expect(db.query).toHaveBeenCalledWith(
+    expect(db.query).toHaveBeenLastCalledWith(
       'INSERT INTO users (username, password, role) VALUES ($1, $2, $3)',
       ['newbie', 'hashed_pw', 'cashier']
     );
@@ -140,7 +172,9 @@ describe('POST /api/auth/register', () => {
 
   test('500 when the insert fails (e.g. duplicate username)', async () => {
     bcrypt.hash.mockResolvedValue('hashed_pw');
-    db.query.mockRejectedValue(new Error('duplicate key'));
+    db.query
+      .mockResolvedValueOnce(usersExist)
+      .mockRejectedValue(new Error('duplicate key'));
 
     const res = await request(app)
       .post('/api/auth/register')

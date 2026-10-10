@@ -3,7 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const db = require('../database/db');
-const { authMiddleware, adminAuth } = require('../middleware/authMiddleware');
+const { firstUserOrAdmin } = require('../middleware/authMiddleware');
 const { JWT_SECRET } = process.env;
 
 // Login
@@ -28,8 +28,8 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Register (Admin-only)
-router.post('/register', authMiddleware, adminAuth, async (req, res) => {
+// Register (first-ever user becomes admin unauthenticated; afterwards admin-only)
+router.post('/register', firstUserOrAdmin, async (req, res) => {
   const { username, password, role } = req.body;
   if (role !== 'cashier' && role !== 'admin') return res.status(400).json({ error: 'Invalid role' });
 
