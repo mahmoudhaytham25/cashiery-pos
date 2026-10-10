@@ -114,7 +114,9 @@ describe('POST /api/auth/register', () => {
   // The register middleware first runs `SELECT COUNT(*)::int AS n FROM users`
   // on the pool. n > 0 → normal admin-only path; n = 0 → unauthenticated
   // bootstrap. The handler then opens a dedicated client, takes a transaction-
-  // scoped advisory lock, re-counts users under the lock, and inserts.
+  // scoped advisory lock, re-counts users under the lock (bootstrap requests
+  // only — an authenticated admin's existence already proves users exist),
+  // and inserts.
   const usersExist = { rows: [{ n: 1 }] };
 
   test('401 without a token once users exist', async () => {
@@ -231,8 +233,7 @@ describe('POST /api/auth/register', () => {
     const { client, calls } = createMockClient([
       {},                          // BEGIN
       {},                          // pg_advisory_xact_lock
-      { rows: [{ n: 1 }] },        // recount → users exist, keep requested role
-      { rows: [], rowCount: 1 },   // INSERT
+      { rows: [], rowCount: 1 },   // INSERT (no recount — admin is authenticated)
       {},                          // COMMIT
     ]);
     db.connect.mockResolvedValue(client);
@@ -260,7 +261,6 @@ describe('POST /api/auth/register', () => {
     const { client, calls } = createMockClient([
       {},                    // BEGIN
       {},                    // pg_advisory_xact_lock
-      { rows: [{ n: 1 }] },  // recount
       conflict,              // INSERT fails
     ]);
     db.connect.mockResolvedValue(client);
@@ -282,7 +282,6 @@ describe('POST /api/auth/register', () => {
     const { client, calls } = createMockClient([
       {},                    // BEGIN
       {},                    // pg_advisory_xact_lock
-      { rows: [{ n: 1 }] },  // recount
       new Error('boom'),     // INSERT fails
     ]);
     db.connect.mockResolvedValue(client);

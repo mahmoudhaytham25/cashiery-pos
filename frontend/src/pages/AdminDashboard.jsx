@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import ProductManagement from "../components/ProductManagement";
 import InventoryAlerts from "../components/InventoryAlerts";
 import SalesSummary from "../components/SalesSummary";
@@ -10,13 +10,15 @@ function AdminDashboard() {
   // refetches low-stock data.
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const handleProductChange = useCallback(() => setRefreshKey(k => k + 1), []);
+
   return (
     <div>
       <h2>Admin Dashboard</h2>
       <div className="admin-layout">
         <InventoryAlerts refreshTrigger={refreshKey} />
         <SalesSummary />
-        <ProductManagement onProductChange={() => setRefreshKey(k => k + 1)} />
+        <ProductManagement onProductChange={handleProductChange} />
         <TransactionLog />
         <UserRegistration />
       </div>

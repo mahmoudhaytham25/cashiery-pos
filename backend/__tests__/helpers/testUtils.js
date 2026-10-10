@@ -29,7 +29,7 @@ const mockRes = () => {
 };
 
 // --- pg client mock ----------------------------------------------------------
-// transactionRoutes POST uses `const client = await db.connect()` then
+// Transactional routes go through database/tx.js: `pool.connect()` then
 // `client.query('BEGIN')`, per-statement queries, `client.query('COMMIT')` /
 // `client.query('ROLLBACK')` and `client.release()`.
 //

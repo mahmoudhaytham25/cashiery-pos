@@ -45,6 +45,10 @@ code {
   font-style: italic;
 }
 
+.status-retry {
+  margin-top: 10px;
+}
+
 nav {
   background-color: #f8f9fa;
   padding: 1rem;
@@ -250,6 +254,16 @@ li {
 }
 
 /* Cart */
+.qty-value {
+  margin: 0 0.5rem;
+}
+
+.cart-total {
+  font-size: 1.2rem;
+  font-weight: bold;
+  margin: 1rem 0;
+}
+
 .stock-note {
   font-size: 0.85rem;
   color: #856404;

@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
-import { apiRequest } from "../api/api";
+import React, { useState } from "react";
+import { useFetch } from "../hooks/useFetch";
 import { formatCurrency } from "../utils/format";
+import FormField from "./FormField";
+import StatusMessage from "./StatusMessage";
 
 // Today's date in YYYY-MM-DD format
 const todayString = () => {
@@ -12,54 +14,29 @@ const todayString = () => {
 };
 
 function SalesSummary() {
-  const [summary, setSummary] = useState(null);
   const [date, setDate] = useState(todayString);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    apiRequest(`/transactions/summary?date=${date}`, "GET")
-      .then(data => { if (!cancelled) setSummary(data); })
-      .catch(err => {
-        if (!cancelled) {
-          setSummary(null);
-          setError(err.message || "Failed to load sales summary");
-        }
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
-
-    return () => { cancelled = true; };
-  }, [date, reloadKey]);
+  const { data: summary, loading, error, refetch } = useFetch(
+    `/transactions/summary?date=${date}`,
+    { deps: [date] }
+  );
 
   return (
     <div className="sales-summary">
       <h3>Daily Sales Summary</h3>
-      <div className="form-group">
-        <label htmlFor="sales-date">Date</label>
-        <input
-          id="sales-date"
-          type="date"
-          value={date}
-          max={todayString()}
-          onChange={e => setDate(e.target.value)}
-        />
-      </div>
+      <FormField
+        id="sales-date"
+        label="Date"
+        type="date"
+        value={date}
+        max={todayString()}
+        onChange={e => setDate(e.target.value)}
+      />
       {loading ? (
         <p>Loading sales summary...</p>
       ) : error ? (
-        <div className="error-message">
+        <StatusMessage type="error" onRetry={refetch}>
           {error}
-          <div style={{ marginTop: '10px' }}>
-            <button type="button" onClick={() => setReloadKey(k => k + 1)}>
-              Retry
-            </button>
-          </div>
-        </div>
+        </StatusMessage>
       ) : !summary ? (
         <p className="empty-state">No sales data available for {date}.</p>
       ) : (
@@ -72,4 +49,4 @@ function SalesSummary() {
   );
 }
 
-export default SalesSummary;
+export default React.memo(SalesSummary);

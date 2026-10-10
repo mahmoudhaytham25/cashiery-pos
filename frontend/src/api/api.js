@@ -1,12 +1,8 @@
+import { clearAuth } from "../auth/authStorage";
+
 const API_BASE_URL = "/api";
 
-const AUTH_KEYS = ["token", "role", "user"];
-
 const getToken = () => localStorage.getItem("token");
-
-const clearAuth = () => {
-  AUTH_KEYS.forEach((key) => localStorage.removeItem(key));
-};
 
 // Optional callback (registered by AuthContext) invoked when the server
 // rejects our credentials, so auth state can be cleared via React instead
@@ -22,14 +18,21 @@ export const normalizeProduct = (product) => ({
   sku: product.sku ?? product.SKU ?? null,
 });
 
-// Accepts either a bare array or a { products: [...] } envelope.
-export const normalizeProducts = (data) => {
-  const list = data?.products ?? data;
-  return Array.isArray(list) ? list.map(normalizeProduct) : [];
+// Accepts either a bare array or a { <key>: [...] } envelope.
+const normalizeList = (data, key) => {
+  const list = data?.[key] ?? data;
+  return Array.isArray(list) ? list : [];
 };
 
+// Accepts either a bare array or a { products: [...] } envelope.
+export const normalizeProducts = (data) =>
+  normalizeList(data, "products").map(normalizeProduct);
+
+export const normalizeTransactions = (data) =>
+  normalizeList(data, "transactions");
+
 // Generic fetch wrapper to handle API requests
-export const apiRequest = async (endpoint, method = "GET", body = null) => {
+export const apiRequest = async (endpoint, method = "GET", body = null, { signal } = {}) => {
   const token = getToken();
   const headers = {
     "Content-Type": "application/json",
@@ -44,6 +47,9 @@ export const apiRequest = async (endpoint, method = "GET", body = null) => {
   };
   if (body) {
     config.body = JSON.stringify(body);
+  }
+  if (signal) {
+    config.signal = signal;
   }
 
   try {
@@ -68,7 +74,9 @@ export const apiRequest = async (endpoint, method = "GET", body = null) => {
 
     return data;
   } catch (error) {
-    console.error("API Request Error:", error);
+    if (error.name !== "AbortError") {
+      console.error("API Request Error:", error);
+    }
     throw error;
   }
 };

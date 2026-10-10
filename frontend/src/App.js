@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { homePathFor } from './auth/authStorage';
 import Login from './components/Login';
 import POS from './pages/POS';
 import AdminDashboard from './pages/AdminDashboard';
@@ -36,7 +37,7 @@ function App() {
 
 function HomeRedirect() {
   const { user } = useAuth();
-  const target = !user ? "/login" : user.role === "admin" ? "/admin" : "/pos";
+  const target = !user ? "/login" : homePathFor(user);
   return <Navigate to={target} replace />;
 }
 
@@ -45,7 +46,7 @@ function ProtectedRoute({ children, role }) {
   if (!user) return <Navigate to="/login" replace />;
   // Wrong role — send the user to their own home page, not back to login.
   if (role && user.role !== role) {
-    return <Navigate to={user.role === "admin" ? "/admin" : "/pos"} replace />;
+    return <Navigate to={homePathFor(user)} replace />;
   }
   return children;
 }

@@ -1,21 +1,21 @@
-import React, { useState } from "react";
+import React, { useMemo } from "react";
 import { apiRequest } from "../api/api";
+import { useSubmit } from "../hooks/useSubmit";
 import { formatCurrency } from "../utils/format";
+import StatusMessage from "./StatusMessage";
 
 function Cart({ cart, onRemove, onProcessPayment, setCart }) {
-  const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const { submitting, error, message, setMessage, submit } = useSubmit();
 
-  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const total = useMemo(
+    () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
+    [cart]
+  );
 
   const handleProcessPayment = async () => {
-    if (cart.length === 0 || submitting) return;
+    if (cart.length === 0) return;
 
-    setSubmitting(true);
-    setMessage("");
-    setError("");
-    try {
+    await submit(async () => {
       // Send only what the server needs — prices/totals are computed server-side.
       await apiRequest("/transactions", "POST", {
         items: cart.map(item => ({
@@ -24,19 +24,13 @@ function Cart({ cart, onRemove, onProcessPayment, setCart }) {
         }))
       });
 
-      if (setCart) {
-        setCart([]);
-      }
-      if (onProcessPayment) {
-        onProcessPayment();
-      }
+      setCart([]);
+      onProcessPayment();
       setMessage("Payment processed successfully!");
-    } catch (err) {
+    }, (err) => {
       console.error("Payment failed:", err);
-      setError("Payment failed: " + err.message);
-    } finally {
-      setSubmitting(false);
-    }
+      return "Payment failed: " + err.message;
+    });
   };
 
   const updateQuantity = (itemId, newQuantity) => {
@@ -45,13 +39,11 @@ function Cart({ cart, onRemove, onProcessPayment, setCart }) {
       return;
     }
 
-    if (setCart) {
-      setCart(prev => prev.map(item =>
-        item.id === itemId
-          ? { ...item, quantity: Math.min(newQuantity, item.stock ?? newQuantity) }
-          : item
-      ));
-    }
+    setCart(prev => prev.map(item =>
+      item.id === itemId
+        ? { ...item, quantity: Math.min(newQuantity, item.stock ?? newQuantity) }
+        : item
+    ));
   };
 
   const atStockCap = (item) => item.stock != null && item.quantity >= item.stock;
@@ -59,8 +51,8 @@ function Cart({ cart, onRemove, onProcessPayment, setCart }) {
   return (
     <div>
       <h3>Cart ({cart.length} items)</h3>
-      {message && <div className="success-message">{message}</div>}
-      {error && <div className="error-message">{error}</div>}
+      {message && <StatusMessage type="success">{message}</StatusMessage>}
+      {error && <StatusMessage type="error">{error}</StatusMessage>}
       {cart.length === 0 ? (
         <p className="empty-state">Cart is empty</p>
       ) : (
@@ -81,7 +73,7 @@ function Cart({ cart, onRemove, onProcessPayment, setCart }) {
                     >
                       -
                     </button>
-                    <span style={{ margin: '0 0.5rem' }}>{item.quantity}</span>
+                    <span className="qty-value">{item.quantity}</span>
                     <button
                       onClick={() => updateQuantity(item.id, item.quantity + 1)}
                       disabled={atStockCap(item)}
@@ -101,7 +93,7 @@ function Cart({ cart, onRemove, onProcessPayment, setCart }) {
               </li>
             ))}
           </ul>
-          <div style={{ fontSize: '1.2rem', fontWeight: 'bold', margin: '1rem 0' }}>
+          <div className="cart-total">
             Total: {formatCurrency(total)}
           </div>
           <button
@@ -116,4 +108,4 @@ function Cart({ cart, onRemove, onProcessPayment, setCart }) {
   );
 }
 
-export default Cart;
+export default React.memo(Cart);

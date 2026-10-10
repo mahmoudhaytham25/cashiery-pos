@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import ProductSearch from "../components/ProductSearch";
 import Cart from "../components/Cart";
 
@@ -6,7 +6,7 @@ function POS() {
   const [cart, setCart] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const handleAddToCart = (product) => {
+  const handleAddToCart = useCallback((product) => {
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       const alreadyInCart = existing ? existing.quantity : 0;
@@ -23,16 +23,16 @@ function POS() {
       }
       return [...prev, { ...product, quantity: 1 }];
     });
-  };
+  }, []);
 
-  const handleRemove = (id) => {
+  const handleRemove = useCallback((id) => {
     setCart(prev => prev.filter(item => item.id !== id));
-  };
+  }, []);
 
-  const handleProcessPayment = () => {
+  const handleProcessPayment = useCallback(() => {
     // Bump the key so ProductSearch refetches fresh stock values.
     setRefreshKey(k => k + 1);
-  };
+  }, []);
 
   return (
     <div>

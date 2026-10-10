@@ -1,14 +1,13 @@
 const { Pool } = require('pg');
 const dotenv = require('dotenv');
+const { connectionConfig } = require('./config');
 
 dotenv.config();
 
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  port: Number(process.env.DB_PORT) || 5432,
+  ...connectionConfig(),
+  connectionTimeoutMillis: 3000,
+  idleTimeoutMillis: 30000,
 });
 
 // An error on an idle pooled client must not crash the process.

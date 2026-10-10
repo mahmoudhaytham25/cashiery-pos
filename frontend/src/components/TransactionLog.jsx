@@ -1,30 +1,14 @@
-import React, { useEffect, useState } from "react";
-import { apiRequest } from "../api/api";
+import React from "react";
+import { normalizeTransactions } from "../api/api";
+import { useFetch } from "../hooks/useFetch";
 import { formatCurrency, formatDate } from "../utils/format";
+import StatusMessage from "./StatusMessage";
 
 function TransactionLog() {
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-
-    apiRequest("/transactions")
-      .then(data => {
-        if (cancelled) return;
-        setTransactions(Array.isArray(data) ? data : data?.transactions ?? []);
-      })
-      .catch(err => {
-        if (cancelled) return;
-        setTransactions([]);
-        setError(err.message || "Failed to load transactions");
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
-
-    return () => { cancelled = true; };
-  }, []);
+  const { data, loading, error } = useFetch("/transactions", {
+    transform: normalizeTransactions,
+  });
+  const transactions = data ?? [];
 
   return (
     <div className="transaction-log">
@@ -32,7 +16,7 @@ function TransactionLog() {
       {loading ? (
         <p>Loading transactions...</p>
       ) : error ? (
-        <div className="error-message">{error}</div>
+        <StatusMessage type="error">{error}</StatusMessage>
       ) : transactions.length === 0 ? (
         <p className="empty-state">No transactions yet.</p>
       ) : (
@@ -49,4 +33,4 @@ function TransactionLog() {
   );
 }
 
-export default TransactionLog;
+export default React.memo(TransactionLog);

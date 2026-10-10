@@ -1,13 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { setOnUnauthorized } from '../api/api';
+import { clearAuth, setAuth } from '../auth/authStorage';
 
 const AuthContext = createContext();
-
-const AUTH_KEYS = ["token", "role", "user"];
-
-const clearAuthKeys = () => {
-  AUTH_KEYS.forEach((key) => localStorage.removeItem(key));
-};
 
 // Decode the payload segment of a JWT. Returns null for malformed tokens.
 const decodeJwt = (token) => {
@@ -40,12 +35,12 @@ export function AuthProvider({ children }) {
     const token = localStorage.getItem("token");
     if (!token) return null;
     const parsed = userFromToken(token);
-    if (!parsed) clearAuthKeys(); // malformed or expired token
+    if (!parsed) clearAuth(); // malformed or expired token
     return parsed;
   });
 
   const logout = useCallback(() => {
-    clearAuthKeys();
+    clearAuth();
     setUser(null);
     window.location.href = "/login";
   }, []);
@@ -56,22 +51,22 @@ export function AuthProvider({ children }) {
     return () => setOnUnauthorized(null);
   }, [logout]);
 
-  const login = (token, userData = {}) => {
-    localStorage.setItem("token", token);
-    localStorage.removeItem("role"); // no longer authoritative
+  const login = useCallback((token, userData = {}) => {
     const parsed = userFromToken(token);
     const nextUser = parsed || {
       id: userData.id ?? null,
       username: userData.username ?? null,
       role: userData.role ?? null,
     };
-    localStorage.setItem("user", JSON.stringify(nextUser));
+    setAuth(token, nextUser);
     setUser(nextUser);
     return nextUser;
-  };
+  }, []);
+
+  const value = useMemo(() => ({ user, login, logout }), [user, login, logout]);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

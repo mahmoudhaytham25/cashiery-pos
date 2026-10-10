@@ -82,13 +82,10 @@ describe('POST /api/transactions', () => {
     const txnRow = { id: 60, cashier_id: 2, total: '12.50', timestamp: '2024-06-01T00:00:00Z' };
     const { client, calls } = createMockClient([
       {},                                                // BEGIN
-      { rows: [{ id: 1, name: 'Coke', price: '2.50' }] },// item 1 SELECT
-      { rows: [], rowCount: 1 },                         // item 1 UPDATE
-      { rows: [{ id: 2, name: 'Pepsi', price: '2.50' }] },// item 2 SELECT
-      { rows: [], rowCount: 1 },                         // item 2 UPDATE
+      { rows: [{ id: 1, name: 'Coke', price: '2.50' }], rowCount: 1 }, // item 1 UPDATE
+      { rows: [{ id: 2, name: 'Pepsi', price: '2.50' }], rowCount: 1 },// item 2 UPDATE
       { rows: [txnRow], rowCount: 1 },                   // INSERT transactions
-      { rows: [], rowCount: 1 },                         // INSERT item 1
-      { rows: [], rowCount: 1 },                         // INSERT item 2
+      { rows: [], rowCount: 1 },                         // INSERT items (unnest)
       {},                                                // COMMIT
     ]);
     db.connect.mockResolvedValue(client);
@@ -107,21 +104,18 @@ describe('POST /api/transactions', () => {
 
     // Locks happen in ascending productId order regardless of request order,
     // and the duplicate productId was merged into a single qty-3 update.
-    const selects = calls.filter((c) => /FOR UPDATE/.test(c.text));
-    expect(selects[0].params).toEqual([1]);
-    expect(selects[1].params).toEqual([2]);
     const updates = calls.filter((c) => /UPDATE products SET stock/.test(c.text));
     expect(updates).toHaveLength(2);
     expect(updates[0].params).toEqual([3, 1]);
     expect(updates[1].params).toEqual([1, 2]);
 
     // total = 3*2.50 + 1*2.50 = 10 — computed in integer cents.
-    const txnInsert = firstMatch(calls, /INSERT INTO transactions/);
+    const txnInsert = firstMatch(calls, /INSERT INTO transactions \(/);
     expect(txnInsert.params).toEqual([2, 10]);
+    // All line items go in as one unnest() insert with parallel arrays.
     const itemInserts = calls.filter((c) => /INSERT INTO transaction_items/.test(c.text));
-    expect(itemInserts).toHaveLength(2);
-    expect(itemInserts[0].params).toEqual([60, 1, 3, 2.5]);
-    expect(itemInserts[1].params).toEqual([60, 2, 1, 2.5]);
+    expect(itemInserts).toHaveLength(1);
+    expect(itemInserts[0].params).toEqual([60, [1, 2], [3, 1], [2.5, 2.5]]);
     expect(wasIssued(calls, 'COMMIT')).toBe(true);
     expect(client.release).toHaveBeenCalledTimes(1);
   });
@@ -141,7 +135,8 @@ describe('POST /api/transactions', () => {
   test('400 + ROLLBACK when a product does not exist', async () => {
     const { client, calls } = createMockClient([
       {},                       // BEGIN
-      { rows: [], rowCount: 0 },// SELECT ... FOR UPDATE -> not found
+      { rows: [], rowCount: 0 },// UPDATE ... RETURNING -> 0 rows
+      { rows: [], rowCount: 0 },// follow-up SELECT -> product does not exist
     ]);
     db.connect.mockResolvedValue(client);
 
@@ -161,8 +156,8 @@ describe('POST /api/transactions', () => {
   test('409 + ROLLBACK when stock is insufficient (atomic UPDATE guard)', async () => {
     const { client, calls } = createMockClient([
       {},                                              // BEGIN
-      { rows: [{ id: 1, name: 'Coke', price: '2.50' }] }, // SELECT FOR UPDATE
       { rows: [], rowCount: 0 },                       // UPDATE -> guarded, 0 rows
+      { rows: [{ id: 1, name: 'Coke' }] },             // follow-up SELECT -> product exists
     ]);
     db.connect.mockResolvedValue(client);
 
@@ -189,8 +184,7 @@ describe('POST /api/transactions', () => {
     const txnRow = { id: 42, cashier_id: 2, total: '5.00', timestamp: '2024-06-01T00:00:00Z' };
     const { client, calls } = createMockClient([
       {},                                                // BEGIN
-      { rows: [{ id: 1, name: 'Coke', price: '2.50' }] },// SELECT FOR UPDATE
-      { rows: [], rowCount: 1 },                         // UPDATE stock
+      { rows: [{ id: 1, name: 'Coke', price: '2.50' }], rowCount: 1 }, // UPDATE stock
       { rows: [txnRow], rowCount: 1 },                   // INSERT transactions
       { rows: [], rowCount: 1 },                         // INSERT transaction_items
       {},                                                // COMMIT
@@ -210,25 +204,22 @@ describe('POST /api/transactions', () => {
     expect(res.status).toBe(201);
     expect(res.body).toEqual(txnRow);
 
-    // Order: BEGIN -> SELECT FOR UPDATE -> UPDATE -> INSERT txn -> INSERT item -> COMMIT
+    // Order: BEGIN -> UPDATE..RETURNING -> INSERT txn -> INSERT items -> COMMIT
     expect(queryTexts(calls)).toEqual([
       'BEGIN',
-      'SELECT id, name, price FROM products WHERE id = $1 FOR UPDATE',
-      'UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1',
+      'UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1 RETURNING id, name, price',
       'INSERT INTO transactions (cashier_id, total) VALUES ($1, $2) RETURNING *',
-      'INSERT INTO transaction_items (transaction_id, product_id, quantity, unit_price) VALUES ($1, $2, $3, $4)',
+      'INSERT INTO transaction_items (transaction_id, product_id, quantity, unit_price) SELECT $1, * FROM unnest($2::int[], $3::int[], $4::numeric[])',
       'COMMIT',
     ]);
 
-    // SELECT took the row lock for the right product.
-    expect(calls[1].params).toEqual([1]);
     // Stock decrement is guarded by stock >= quantity.
-    expect(calls[2].params).toEqual([2, 1]);
+    expect(calls[1].params).toEqual([2, 1]);
     // Cashier id comes from the JWT (id 2), total is computed as 2 * 2.50 = 5 —
     // neither came from the request body.
-    expect(calls[3].params).toEqual([2, 5]);
-    // Line item uses the transaction id, product, qty and the DB unit price.
-    expect(calls[4].params).toEqual([42, 1, 2, 2.5]);
+    expect(calls[2].params).toEqual([2, 5]);
+    // Line items go in as parallel arrays: transaction id, product, qty, DB price.
+    expect(calls[3].params).toEqual([42, [1], [2], [2.5]]);
     expect(client.release).toHaveBeenCalledTimes(1);
   });
 
@@ -236,13 +227,10 @@ describe('POST /api/transactions', () => {
     const txnRow = { id: 50, cashier_id: 2, total: '7.50', timestamp: '2024-06-01T00:00:00Z' };
     const { client, calls } = createMockClient([
       {},                                                // BEGIN
-      { rows: [{ id: 1, name: 'Coke', price: '2.50' }] },// item 1 SELECT
-      { rows: [], rowCount: 1 },                         // item 1 UPDATE
-      { rows: [{ id: 2, name: 'Pepsi', price: '2.50' }] },// item 2 SELECT
-      { rows: [], rowCount: 1 },                         // item 2 UPDATE
+      { rows: [{ id: 1, name: 'Coke', price: '2.50' }], rowCount: 1 }, // item 1 UPDATE
+      { rows: [{ id: 2, name: 'Pepsi', price: '2.50' }], rowCount: 1 },// item 2 UPDATE
       { rows: [txnRow], rowCount: 1 },                   // INSERT transactions
-      { rows: [], rowCount: 1 },                         // INSERT item 1
-      { rows: [], rowCount: 1 },                         // INSERT item 2
+      { rows: [], rowCount: 1 },                         // INSERT items (unnest)
       {},                                                // COMMIT
     ]);
     db.connect.mockResolvedValue(client);
@@ -254,12 +242,11 @@ describe('POST /api/transactions', () => {
 
     expect(res.status).toBe(201);
     // total = 2*2.50 + 1*2.50 = 7.5
-    const txnInsert = firstMatch(calls, /INSERT INTO transactions/);
+    const txnInsert = firstMatch(calls, /INSERT INTO transactions \(/);
     expect(txnInsert.params).toEqual([2, 7.5]);
     const itemInserts = calls.filter((c) => /INSERT INTO transaction_items/.test(c.text));
-    expect(itemInserts).toHaveLength(2);
-    expect(itemInserts[0].params).toEqual([50, 1, 2, 2.5]);
-    expect(itemInserts[1].params).toEqual([50, 2, 1, 2.5]);
+    expect(itemInserts).toHaveLength(1);
+    expect(itemInserts[0].params).toEqual([50, [1, 2], [2, 1], [2.5, 2.5]]);
     expect(wasIssued(calls, 'COMMIT')).toBe(true);
     expect(client.release).toHaveBeenCalledTimes(1);
   });
@@ -267,7 +254,7 @@ describe('POST /api/transactions', () => {
   test('500 + ROLLBACK when a query inside the transaction throws', async () => {
     const { client, calls } = createMockClient([
       {},                              // BEGIN
-      new Error('connection lost'),    // SELECT throws
+      new Error('connection lost'),    // UPDATE throws
     ]);
     db.connect.mockResolvedValue(client);
 

@@ -31,19 +31,20 @@ const validateProductFields = ({ name, price, stock }) => {
 const normalizeSku = (SKU) =>
   typeof SKU === 'string' && SKU.trim() !== '' ? SKU.trim() : null;
 
+// Coerced column values shared by INSERT and UPDATE: name, price, stock, SKU.
+const productParams = ({ name, price, stock, SKU }) =>
+  [name.trim(), Number(price), Number(stock), normalizeSku(SKU)];
+
+const PRODUCT_LIST_LIMIT = 500;
+
 // Get all products (Cashier/Admin)
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const search = req.query.search;
-    let products;
-    if (search) {
-      products = await db.query(
-        'SELECT * FROM products WHERE name ILIKE $1 ORDER BY name LIMIT 500',
-        [`%${search}%`]
-      );
-    } else {
-      products = await db.query('SELECT * FROM products ORDER BY name LIMIT 500');
-    }
+    const products = await db.query(
+      `SELECT * FROM products WHERE ($1::text IS NULL OR name ILIKE $1) ORDER BY name LIMIT ${PRODUCT_LIST_LIMIT}`,
+      [search ? `%${search}%` : null]
+    );
     res.json(products.rows);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -55,11 +56,10 @@ router.post('/', authMiddleware, adminAuth, async (req, res) => {
   const invalid = validateProductFields(req.body);
   if (invalid) return res.status(400).json({ error: invalid });
 
-  const { name, price, stock, SKU } = req.body;
   try {
     const result = await db.query(
       'INSERT INTO products (name, price, stock, SKU) VALUES ($1, $2, $3, $4) RETURNING *',
-      [name.trim(), Number(price), Number(stock), normalizeSku(SKU)]
+      productParams(req.body)
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -78,7 +78,7 @@ router.get('/low-stock', authMiddleware, async (req, res) => {
       threshold = Math.min(t, 1000);
     }
     const products = await db.query(
-      'SELECT * FROM products WHERE stock < $1 LIMIT 500',
+      `SELECT * FROM products WHERE stock < $1 LIMIT ${PRODUCT_LIST_LIMIT}`,
       [threshold]
     );
     res.json(products.rows);
@@ -94,7 +94,7 @@ router.put('/:id', authMiddleware, adminAuth, async (req, res) => {
     return res.status(400).json({ error: 'Invalid product id' });
   }
 
-  const { name, price, stock, SKU } = req.body;
+  const { name, price, stock } = req.body;
 
   // Basic validation for required fields
   if (!name || price === undefined || stock === undefined) {
@@ -109,7 +109,7 @@ router.put('/:id', authMiddleware, adminAuth, async (req, res) => {
        SET name = $1, price = $2, stock = $3, SKU = $4 
        WHERE id = $5
        RETURNING *`,
-      [name.trim(), Number(price), Number(stock), normalizeSku(SKU), id]
+      [...productParams(req.body), id]
     );
 
     if (result.rowCount === 0) {
@@ -132,14 +132,14 @@ router.put('/:id', authMiddleware, adminAuth, async (req, res) => {
   }
 });
 
-router.delete('/:productId', authMiddleware, adminAuth, async (req, res) => {
-  const { productId } = req.params;
-  if (!isValidId(productId)) {
+router.delete('/:id', authMiddleware, adminAuth, async (req, res) => {
+  const { id } = req.params;
+  if (!isValidId(id)) {
     return res.status(400).json({ error: 'Invalid product id' });
   }
   try {
     // Optionally, check if product exists first
-    const result = await db.query('DELETE FROM products WHERE id = $1 RETURNING *', [productId]);
+    const result = await db.query('DELETE FROM products WHERE id = $1 RETURNING *', [id]);
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Product not found' });
     }

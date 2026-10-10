@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database/db');
+const { withTransaction } = require('../database/tx');
+const { HttpError } = require('../middleware/errors');
 const { authMiddleware, adminAuth } = require('../middleware/authMiddleware');
 
 
@@ -16,89 +18,102 @@ router.post('/', authMiddleware, async (req, res) => {
   if (items.length > 100) {
     return res.status(400).json({ error: 'Too many items (max 100)' });
   }
+  // Validate each item and merge duplicate productIds in one pass, then sort
+  // ascending so concurrent checkouts always lock product rows in the same
+  // order (prevents deadlocks).
+  const qtyByProduct = new Map();
   for (const item of items) {
     if (!Number.isInteger(item.productId) || item.productId <= 0 ||
         !Number.isInteger(item.quantity) || item.quantity <= 0) {
       return res.status(400).json({ error: 'Each item must have a valid productId and a positive integer quantity' });
     }
-  }
-
-  // Merge duplicate productIds and sort ascending so concurrent checkouts
-  // always lock product rows in the same order (prevents deadlocks).
-  const qtyByProduct = new Map();
-  for (const item of items) {
     qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) || 0) + item.quantity);
   }
   const sortedItems = [...qtyByProduct.entries()]
     .map(([productId, quantity]) => ({ productId, quantity }))
     .sort((a, b) => a.productId - b.productId);
 
-  let client;
   try {
-    client = await db.connect();
-    await client.query('BEGIN');
+    const r = await withTransaction(db, async (client, abort) => {
+      // One guarded UPDATE per item: decrements stock, takes the row lock and
+      // returns the price — but only while enough stock remains.
+      let totalCents = 0;
+      const lineItems = [];
+      for (const item of sortedItems) {
+        const updated = await client.query(
+          'UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1 RETURNING id, name, price',
+          [item.quantity, item.productId]
+        );
+        if (updated.rowCount === 0) {
+          // The guard rejected the update — distinguish a missing product
+          // (400) from insufficient stock (409) with one lookup.
+          const product = await client.query(
+            'SELECT id, name FROM products WHERE id = $1',
+            [item.productId]
+          );
+          if (!product.rows[0]) {
+            abort(400, { error: `Product ${item.productId} not found` });
+          }
+          abort(409, { error: `Insufficient stock for ${product.rows[0].name}` });
+        }
 
-    // Compute total in integer cents from DB prices and decrement stock atomically
-    let totalCents = 0;
-    const lineItems = [];
-    for (const item of sortedItems) {
-      const product = await client.query(
-        'SELECT id, name, price FROM products WHERE id = $1 FOR UPDATE',
-        [item.productId]
-      );
-      if (!product.rows[0]) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ error: `Product ${item.productId} not found` });
+        const unitPrice = parseFloat(updated.rows[0].price);
+        totalCents += Math.round(unitPrice * 100) * item.quantity;
+        lineItems.push({ productId: item.productId, quantity: item.quantity, unitPrice });
       }
+      const total = totalCents / 100;
 
-      const stockUpdate = await client.query(
-        'UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1',
-        [item.quantity, item.productId]
+      // Insert transaction
+      const transaction = await client.query(
+        'INSERT INTO transactions (cashier_id, total) VALUES ($1, $2) RETURNING *',
+        [cashierId, total]
       );
-      if (stockUpdate.rowCount === 0) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ error: `Insufficient stock for ${product.rows[0].name}` });
-      }
 
-      const unitPrice = parseFloat(product.rows[0].price);
-      totalCents += Math.round(unitPrice * 100) * item.quantity;
-      lineItems.push({ productId: item.productId, quantity: item.quantity, unitPrice });
-    }
-    const total = totalCents / 100;
-
-    // Insert transaction
-    const transaction = await client.query(
-      'INSERT INTO transactions (cashier_id, total) VALUES ($1, $2) RETURNING *',
-      [cashierId, total]
-    );
-
-    // Insert transaction line items
-    for (const line of lineItems) {
+      // Insert all line items in one statement via parallel arrays.
       await client.query(
-        'INSERT INTO transaction_items (transaction_id, product_id, quantity, unit_price) VALUES ($1, $2, $3, $4)',
-        [transaction.rows[0].id, line.productId, line.quantity, line.unitPrice]
+        'INSERT INTO transaction_items (transaction_id, product_id, quantity, unit_price) SELECT $1, * FROM unnest($2::int[], $3::int[], $4::numeric[])',
+        [
+          transaction.rows[0].id,
+          lineItems.map((l) => l.productId),
+          lineItems.map((l) => l.quantity),
+          lineItems.map((l) => l.unitPrice),
+        ]
       );
-    }
 
-    await client.query('COMMIT');
-    res.status(201).json(transaction.rows[0]);
+      return { status: 201, body: transaction.rows[0] };
+    });
+    res.status(r.status).json(r.body);
   } catch (err) {
-    if (client) await client.query('ROLLBACK').catch(() => {});
     console.error(err);
     res.status(500).json({ error: 'Transaction failed' });
-  } finally {
-    if (client) client.release();
   }
 });
 // Get all transactions (Admin-only)
 router.get('/', authMiddleware, adminAuth, async (req, res) => { // Add authMiddleware
+  let limit = 500;
+  if (req.query.limit !== undefined) {
+    const l = Number(req.query.limit);
+    if (!Number.isInteger(l) || l <= 0) {
+      throw new HttpError(400, 'limit must be a positive integer');
+    }
+    limit = Math.min(l, 500);
+  }
+  let offset = 0;
+  if (req.query.offset !== undefined) {
+    const o = Number(req.query.offset);
+    if (!Number.isInteger(o) || o < 0) {
+      throw new HttpError(400, 'offset must be a non-negative integer');
+    }
+    offset = o;
+  }
   try {
     const transactions = await db.query(`
       SELECT t.*, COALESCE(u.username, 'Deleted user') AS username 
       FROM transactions t
       LEFT JOIN users u ON t.cashier_id = u.id
       ORDER BY t.timestamp DESC
-    `);
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
     res.json(transactions.rows);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });

@@ -1,32 +1,44 @@
-import React, { useState, useEffect, useRef } from "react";
-import { apiRequest, normalizeProducts } from "../api/api";
-import { formatCurrency } from "../utils/format";
+import React, { useState, useEffect, useCallback } from "react";
+import { normalizeProducts } from "../api/api";
+import { useApiCall } from "../hooks/useFetch";
+import { useSubmit } from "../hooks/useSubmit";
+import FormField from "./FormField";
+import ProductInfo, { LOW_STOCK_THRESHOLD } from "./ProductInfo";
+import StatusMessage from "./StatusMessage";
 
 const EMPTY_FORM = { name: "", price: "", stock: "", SKU: "" };
 
 function ProductManagement({ onProductChange }) {
   const [products, setProducts] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const { submitting, error, setError, message, setMessage, submit, clear } = useSubmit();
+  const { run, loading } = useApiCall();
   const [editingId, setEditingId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const mountedRef = useRef(true);
+
+  const fetchProducts = useCallback(async () => {
+    try {
+      const data = await run("/products");
+      if (data === undefined) return; // superseded by a newer request
+      const sortedProducts = normalizeProducts(data).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+      setProducts(sortedProducts);
+    } catch (err) {
+      setError("Failed to fetch products: " + err.message);
+    }
+  }, [run, setError]);
 
   useEffect(() => {
     fetchProducts();
-    return () => { mountedRef.current = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchProducts]);
 
   // Auto-dismiss transient success messages.
   useEffect(() => {
     if (!message) return;
     const timer = setTimeout(() => setMessage(""), 4000);
     return () => clearTimeout(timer);
-  }, [message]);
+  }, [message, setMessage]);
 
   // Revert "Confirm?" delete buttons after a few seconds.
   useEffect(() => {
@@ -35,23 +47,6 @@ function ProductManagement({ onProductChange }) {
     return () => clearTimeout(timer);
   }, [confirmDeleteId]);
 
-  const fetchProducts = async () => {
-    setLoading(true);
-    try {
-      const data = await apiRequest("/products");
-      if (!mountedRef.current) return;
-      const sortedProducts = normalizeProducts(data).sort((a, b) =>
-        a.name.localeCompare(b.name)
-      );
-      setProducts(sortedProducts);
-    } catch (err) {
-      if (!mountedRef.current) return;
-      setError("Failed to fetch products: " + err.message);
-    } finally {
-      if (mountedRef.current) setLoading(false);
-    }
-  };
-
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
@@ -59,8 +54,7 @@ function ProductManagement({ onProductChange }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (submitting) return;
-    setError("");
-    setMessage("");
+    clear();
 
     const name = form.name.trim();
     const price = parseFloat(form.price);
@@ -79,8 +73,7 @@ function ProductManagement({ onProductChange }) {
       return;
     }
 
-    setSubmitting(true);
-    try {
+    await submit(async () => {
       const productData = {
         name,
         price,
@@ -89,22 +82,18 @@ function ProductManagement({ onProductChange }) {
       };
 
       if (editingId) {
-        await apiRequest(`/products/${editingId}`, "PUT", productData);
+        if ((await run(`/products/${editingId}`, "PUT", productData)) === undefined) return;
         setMessage("Product updated successfully.");
         setEditingId(null);
       } else {
-        await apiRequest("/products", "POST", productData);
+        if ((await run("/products", "POST", productData)) === undefined) return;
         setMessage("Product added successfully.");
       }
 
       setForm(EMPTY_FORM);
       await fetchProducts();
       if (onProductChange) onProductChange();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
+    });
   };
 
   const handleEdit = (product) => {
@@ -115,8 +104,7 @@ function ProductManagement({ onProductChange }) {
       SKU: product.sku || ""
     });
     setEditingId(product.id);
-    setError("");
-    setMessage("");
+    clear();
   };
 
   const handleDelete = async (id) => {
@@ -126,11 +114,10 @@ function ProductManagement({ onProductChange }) {
       return;
     }
     setConfirmDeleteId(null);
-    setError("");
-    setMessage("");
+    clear();
 
     try {
-      await apiRequest(`/products/${id}`, "DELETE");
+      if ((await run(`/products/${id}`, "DELETE")) === undefined) return;
       if (id === editingId) cancelEdit();
       setMessage("Product deleted.");
       await fetchProducts();
@@ -154,55 +141,47 @@ function ProductManagement({ onProductChange }) {
       <h3>Product Management</h3>
 
       <form onSubmit={handleSubmit} className="product-form">
-        <div className="form-group">
-          <label htmlFor="pm-name">Product Name</label>
-          <input
-            id="pm-name"
-            name="name"
-            value={form.name}
-            onChange={handleChange}
-            required
-            className="form-input"
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="pm-price">Price</label>
-          <input
-            id="pm-price"
-            name="price"
-            value={form.price}
-            onChange={handleChange}
-            required
-            type="number"
-            step="0.01"
-            min="0"
-            className="form-input"
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="pm-stock">Stock Quantity</label>
-          <input
-            id="pm-stock"
-            name="stock"
-            value={form.stock}
-            onChange={handleChange}
-            required
-            type="number"
-            step="1"
-            min="0"
-            className="form-input"
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="pm-sku">SKU (optional)</label>
-          <input
-            id="pm-sku"
-            name="SKU"
-            value={form.SKU}
-            onChange={handleChange}
-            className="form-input"
-          />
-        </div>
+        <FormField
+          id="pm-name"
+          label="Product Name"
+          name="name"
+          value={form.name}
+          onChange={handleChange}
+          required
+          className="form-input"
+        />
+        <FormField
+          id="pm-price"
+          label="Price"
+          name="price"
+          value={form.price}
+          onChange={handleChange}
+          required
+          type="number"
+          step="0.01"
+          min="0"
+          className="form-input"
+        />
+        <FormField
+          id="pm-stock"
+          label="Stock Quantity"
+          name="stock"
+          value={form.stock}
+          onChange={handleChange}
+          required
+          type="number"
+          step="1"
+          min="0"
+          className="form-input"
+        />
+        <FormField
+          id="pm-sku"
+          label="SKU (optional)"
+          name="SKU"
+          value={form.SKU}
+          onChange={handleChange}
+          className="form-input"
+        />
         <div className="form-actions">
           <button type="submit" className="submit-btn" disabled={submitting}>
             {submitting
@@ -217,8 +196,8 @@ function ProductManagement({ onProductChange }) {
         </div>
       </form>
 
-      {message && <div className="success-message">{message}</div>}
-      {error && <div className="error-message">{error}</div>}
+      {message && <StatusMessage type="success">{message}</StatusMessage>}
+      {error && <StatusMessage type="error">{error}</StatusMessage>}
 
       <div className="product-list">
         <h4>Current Products ({products.length})</h4>
@@ -228,16 +207,10 @@ function ProductManagement({ onProductChange }) {
           <ul className="products">
             {products.map(product => (
               <li key={product.id} className="product-item">
-                <div className="product-info">
-                  <strong className="product-name">{product.name}</strong>
-                  <div className="product-detail">Price: {formatCurrency(product.price)}</div>
-                  <div className={`product-detail ${product.stock < 10 ? 'low-stock' : ''}`}>
-                    Stock: {product.stock}
-                  </div>
-                  {product.sku && (
-                    <div className="product-detail">SKU: {product.sku}</div>
-                  )}
-                </div>
+                <ProductInfo
+                  product={product}
+                  lowStock={product.stock < LOW_STOCK_THRESHOLD}
+                />
                 <div className="product-actions">
                   <button
                     onClick={() => handleEdit(product)}
@@ -261,4 +234,4 @@ function ProductManagement({ onProductChange }) {
   );
 }
 
-export default ProductManagement;
+export default React.memo(ProductManagement);

@@ -24,6 +24,7 @@ const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const { rateLimit } = require('./middleware/rateLimit');
+const { errorHandler } = require('./middleware/errors');
 
 // Routes
 app.use('/api/auth', rateLimit(), authRoutes);
@@ -38,10 +39,7 @@ app.get('/api/health', (req, res) => {
 // JSON 404 for unmatched routes, then a terminal error handler so e.g.
 // malformed JSON bodies return JSON instead of Express's HTML error page.
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
-app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
-  console.error(err);
-  res.status(500).json({ error: 'Internal server error' });
-});
+app.use(errorHandler);
 
 // Start server
 const PORT = Number(process.env.PORT) || 5000;

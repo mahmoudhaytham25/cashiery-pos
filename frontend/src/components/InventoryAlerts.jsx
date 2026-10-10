@@ -1,44 +1,15 @@
-import React, { useEffect, useState } from "react";
-import { apiRequest, normalizeProducts } from "../api/api";
+import React from "react";
+import { normalizeProducts } from "../api/api";
+import { useFetch } from "../hooks/useFetch";
+import StatusMessage from "./StatusMessage";
 
 function InventoryAlerts({ refreshTrigger }) {
-  const [alerts, setAlerts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timeoutId;
-
-    const load = async () => {
-      try {
-        const data = await apiRequest("/products/low-stock");
-        if (cancelled) return;
-        setAlerts(normalizeProducts(data));
-        setError(null);
-      } catch (err) {
-        if (cancelled) return;
-        setError(err.message || "Failed to load inventory alerts");
-        console.error("API Error:", err);
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-          // Schedule the next poll only after this request settles, so
-          // requests never overlap.
-          timeoutId = setTimeout(load, 30000);
-        }
-      }
-    };
-
-    setLoading(true);
-    load();
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [refreshTrigger, reloadKey]);
+  const { data, loading, error, refetch } = useFetch("/products/low-stock", {
+    deps: [refreshTrigger],
+    transform: normalizeProducts,
+    pollInterval: 30000,
+  });
+  const alerts = data ?? [];
 
   if (loading && alerts.length === 0) {
     return <div>Loading inventory alerts...</div>;
@@ -46,14 +17,9 @@ function InventoryAlerts({ refreshTrigger }) {
 
   if (error) {
     return (
-      <div className="error-message">
+      <StatusMessage type="error" onRetry={refetch}>
         Error: {error}
-        <div style={{ marginTop: '10px' }}>
-          <button onClick={() => setReloadKey(k => k + 1)}>
-            Retry
-          </button>
-        </div>
-      </div>
+      </StatusMessage>
     );
   }
 
@@ -76,4 +42,4 @@ function InventoryAlerts({ refreshTrigger }) {
   );
 }
 
-export default InventoryAlerts;
+export default React.memo(InventoryAlerts);

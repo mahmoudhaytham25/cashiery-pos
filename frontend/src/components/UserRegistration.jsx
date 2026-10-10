@@ -1,21 +1,18 @@
 import React, { useState } from "react";
 import { apiRequest } from "../api/api";
+import { useSubmit } from "../hooks/useSubmit";
+import FormField from "./FormField";
+import StatusMessage from "./StatusMessage";
 
 function UserRegistration() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("cashier");
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const { submitting, error, message, setMessage, submit } = useSubmit();
 
   const handleRegister = async (e) => {
     e.preventDefault();
-    if (submitting) return;
-    setMessage("");
-    setError("");
-    setSubmitting(true);
-    try {
+    await submit(async () => {
       await apiRequest("/auth/register", "POST", {
         username: username.trim(),
         password,
@@ -25,39 +22,30 @@ function UserRegistration() {
       setUsername("");
       setPassword("");
       setRole("cashier");
-    } catch (err) {
-      setError(err.message || "Registration failed");
-    } finally {
-      setSubmitting(false);
-    }
+    }, (err) => err.message || "Registration failed");
   };
 
   return (
     <div>
       <h3>Register New User</h3>
       <form onSubmit={handleRegister}>
-        <div className="form-group">
-          <label htmlFor="reg-username">Username</label>
-          <input
-            id="reg-username"
-            type="text"
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            autoComplete="off"
-            required
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="reg-password">Password</label>
-          <input
-            id="reg-password"
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            autoComplete="new-password"
-            required
-          />
-        </div>
+        <FormField
+          id="reg-username"
+          label="Username"
+          value={username}
+          onChange={e => setUsername(e.target.value)}
+          autoComplete="off"
+          required
+        />
+        <FormField
+          id="reg-password"
+          label="Password"
+          type="password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          autoComplete="new-password"
+          required
+        />
         <div className="form-group">
           <label htmlFor="reg-role">Role</label>
           <select
@@ -73,10 +61,10 @@ function UserRegistration() {
           {submitting ? "Registering..." : "Register"}
         </button>
       </form>
-      {message && <div className="success-message">{message}</div>}
-      {error && <div className="error-message">{error}</div>}
+      {message && <StatusMessage type="success">{message}</StatusMessage>}
+      {error && <StatusMessage type="error">{error}</StatusMessage>}
     </div>
   );
 }
 
-export default UserRegistration;
+export default React.memo(UserRegistration);

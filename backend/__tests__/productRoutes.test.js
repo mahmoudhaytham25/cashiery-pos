@@ -35,7 +35,10 @@ describe('GET /api/products', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual(rows);
-    expect(db.query).toHaveBeenCalledWith('SELECT * FROM products ORDER BY name LIMIT 500');
+    expect(db.query).toHaveBeenCalledWith(
+      'SELECT * FROM products WHERE ($1::text IS NULL OR name ILIKE $1) ORDER BY name LIMIT 500',
+      [null]
+    );
   });
 
   test('200 uses an ILIKE filter when ?search= is given', async () => {
@@ -47,7 +50,7 @@ describe('GET /api/products', () => {
 
     expect(res.status).toBe(200);
     expect(db.query).toHaveBeenCalledWith(
-      'SELECT * FROM products WHERE name ILIKE $1 ORDER BY name LIMIT 500',
+      'SELECT * FROM products WHERE ($1::text IS NULL OR name ILIKE $1) ORDER BY name LIMIT 500',
       ['%coke%']
     );
   });
@@ -309,8 +312,8 @@ describe('PUT /api/products/:id', () => {
   });
 });
 
-describe('DELETE /api/products/:productId', () => {
-  test('400 on a non-integer :productId (no DB call)', async () => {
+describe('DELETE /api/products/:id', () => {
+  test('400 on a non-integer :id (no DB call)', async () => {
     const res = await request(app)
       .delete('/api/products/abc')
       .set(bearer(adminToken()));

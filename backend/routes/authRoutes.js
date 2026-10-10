@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const db = require('../database/db');
+const { withTransaction } = require('../database/tx');
 const { firstUserOrAdmin } = require('../middleware/authMiddleware');
 const { JWT_SECRET } = process.env;
 
@@ -56,36 +57,36 @@ router.post('/register', firstUserOrAdmin, async (req, res) => {
   }
   if (role !== 'cashier' && role !== 'admin') return res.status(400).json({ error: 'Invalid role' });
 
-  let client;
-  try {
-    client = await db.connect();
-    await client.query('BEGIN');
-    // Serialize the "is this the first user" check + insert so two concurrent
-    // registrations can't both slip past firstUserOrAdmin and create admins.
-    await client.query('SELECT pg_advisory_xact_lock($1)', [BOOTSTRAP_LOCK_ID]);
-    const { rows } = await client.query('SELECT COUNT(*)::int AS n FROM users');
-    if (rows[0].n > 0 && req.isBootstrap) {
-      // Another registration won the bootstrap race — this request was never
-      // authenticated, so it may not create a user at all.
-      await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-    const finalRole = rows[0].n === 0 ? 'admin' : role;
+  // Hash before opening the transaction — bcrypt is CPU-bound work that
+  // shouldn't hold a pooled client inside BEGIN/COMMIT.
+  const hashedPassword = await bcrypt.hash(password, 10);
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    await client.query(
-      'INSERT INTO users (username, password, role) VALUES ($1, $2, $3)',
-      [username.trim(), hashedPassword, finalRole]
-    );
-    await client.query('COMMIT');
-    res.status(201).json({ message: 'User created' });
+  try {
+    const r = await withTransaction(db, async (client, abort) => {
+      // Serialize the "is this the first user" check + insert so two concurrent
+      // registrations can't both slip past firstUserOrAdmin and create admins.
+      await client.query('SELECT pg_advisory_xact_lock($1)', [BOOTSTRAP_LOCK_ID]);
+      let finalRole = role;
+      if (req.isBootstrap) {
+        const { rows } = await client.query('SELECT COUNT(*)::int AS n FROM users');
+        if (rows[0].n > 0) {
+          // Another registration won the bootstrap race — this request was never
+          // authenticated, so it may not create a user at all.
+          abort(403, { error: 'Admin access required' });
+        }
+        finalRole = 'admin';
+      }
+      await client.query(
+        'INSERT INTO users (username, password, role) VALUES ($1, $2, $3)',
+        [username.trim(), hashedPassword, finalRole]
+      );
+      return { status: 201, body: { message: 'User created' } };
+    });
+    res.status(r.status).json(r.body);
   } catch (err) {
-    if (client) await client.query('ROLLBACK').catch(() => {});
     if (err.code === '23505') return res.status(409).json({ error: 'Username already exists' });
     console.error(err);
     res.status(500).json({ error: 'Server error' });
-  } finally {
-    if (client) client.release();
   }
 });
 

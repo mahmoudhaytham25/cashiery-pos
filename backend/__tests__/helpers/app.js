@@ -7,6 +7,7 @@ const express = require('express');
 const authRoutes = require('../../routes/authRoutes');
 const productRoutes = require('../../routes/productRoutes');
 const transactionRoutes = require('../../routes/transactionRoutes');
+const { errorHandler } = require('../../middleware/errors');
 
 const buildApp = () => {
   const app = express();
@@ -14,6 +15,7 @@ const buildApp = () => {
   app.use('/api/auth', authRoutes);
   app.use('/api/products', productRoutes);
   app.use('/api/transactions', transactionRoutes);
+  app.use(errorHandler);
   return app;
 };
 
