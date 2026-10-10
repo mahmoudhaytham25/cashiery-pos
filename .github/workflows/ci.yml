@@ -33,12 +33,21 @@ jobs:
         run: npm ci
       - name: Build
         working-directory: frontend
-        env:
-          # Same rationale as frontend/Dockerfile — fresh resolution can pull an
-          # eslint-plugin-jest that breaks eslint-config-react-app's overrides.
-          DISABLE_ESLINT_PLUGIN: "true"
-          CI: "false" # don't fail the build on warnings
         run: npm run build
+
+  frontend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Run tests
+        working-directory: frontend
+        run: npx vitest run
 
   migrations:
     runs-on: ubuntu-latest
@@ -77,3 +86,58 @@ jobs:
           npm run migrate:up
           npm run migrate:down
           npm run migrate:up
+
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cashiery
+          POSTGRES_PASSWORD: cashiery-dev-password
+          POSTGRES_DB: cashiery
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cashiery -d cashiery"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Same DB_* vars database/db.js reads; scripts/migrate.js maps them
+      # to the DATABASE_URL node-pg-migrate expects. JWT_SECRET is required
+      # by backend/index.js.
+      DB_HOST: localhost
+      DB_USER: cashiery
+      DB_PASSWORD: cashiery-dev-password
+      DB_NAME: cashiery
+      JWT_SECRET: e2e-secret
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Apply migrations
+        working-directory: backend
+        run: npm run migrate:up
+      - name: Start backend
+        working-directory: backend
+        run: node index.js &
+      - name: Wait for backend
+        run: |
+          for i in $(seq 1 30); do curl -s -o /dev/null http://localhost:5000/api/products && break; sleep 1; done
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright tests
+        working-directory: frontend
+        run: npx playwright test

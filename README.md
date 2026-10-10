@@ -38,7 +38,7 @@ React Frontend (port 3000)  →  Express REST API (port 5000)  →  PostgreSQL
 
 ## Stack
 
-React · Node.js (Express) · PostgreSQL · node-pg-migrate · JWT · bcrypt
+React (Vite) · Node.js (Express) · PostgreSQL · node-pg-migrate · JWT · bcrypt
 
 ## Getting Started
 
@@ -82,7 +82,17 @@ npm run migrate:create -- <name>   # scaffold a new migration file
 ```bash
 cd frontend
 npm install
-npm start              # http://localhost:3000
+npm run dev          # http://localhost:3000 (Vite dev server — proxies /api to :5000)
+```
+
+Production build: `npm run build` outputs static assets to `frontend/dist/` (preview locally with `npm run preview`).
+
+## Testing
+
+```bash
+cd backend && npm test            # Jest API/unit tests
+cd frontend && npm test           # Vitest + Testing Library
+cd frontend && npm run test:e2e   # Playwright — needs backend on :5000 (see frontend/e2e/README.md)
 ```
 
 ## License

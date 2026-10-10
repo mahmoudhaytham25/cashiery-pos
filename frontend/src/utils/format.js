@@ -10,6 +10,7 @@ export const formatCurrency = (value) => {
 };
 
 export const formatDate = (value) => {
+  if (value == null) return "";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
 };

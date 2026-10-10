@@ -4,5 +4,10 @@
 # Environment variables
 **/.env
 
-# CRA production build output
+# Frontend production build output (Vite: dist/; legacy CRA: build/)
+**/dist/
 **/build/
+
+# Playwright e2e artifacts
+**/test-results/
+**/playwright-report/

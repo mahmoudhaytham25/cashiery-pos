@@ -3,13 +3,13 @@
   "name": "Cashiery POS System",
   "icons": [
     {
-      "src": "%PUBLIC_URL%/small.jpg",
+      "src": "/small.jpg",
       "type": "image/jpg",
       "sizes": "192x192",
       "purpose": "any"
     },
     {
-      "src": "%PUBLIC_URL%/big.jpg",
+      "src": "/big.jpg",
       "type": "image/jpg",
       "sizes": "512x512",
       "purpose": "any"
