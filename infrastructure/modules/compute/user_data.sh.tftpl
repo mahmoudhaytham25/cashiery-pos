@@ -1,0 +1,54 @@
+#!/bin/bash
+# Cashiery POS bootstrap — install docker, pull ECR images, compose up.
+# Images are built+scanned in CI and pushed by the GitHub OIDC deploy role;
+# this box only pulls them (its IAM role has ECR read-only).
+set -euxo pipefail
+exec > >(tee /var/log/cashiery-bootstrap.log) 2>&1
+
+APP_DIR=/opt/cashiery-pos
+
+# Small swapfile — headroom for Postgres/Node on t3.micro.
+if [ ! -f /swapfile ]; then
+  fallocate -l 1G /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+dnf update -y
+dnf install -y docker git
+systemctl enable --now docker
+usermod -aG docker ec2-user
+
+# Compose v2 plugin (not packaged in AL2023 repos).
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# Clone only for the compose file — images come from ECR.
+git clone "${repo_url}" "$APP_DIR"
+cd "$APP_DIR"
+git checkout "${repo_ref}"
+
+aws ecr get-login-password --region "${aws_region}" \
+  | docker login --username AWS --password-stdin "${ecr_registry}"
+
+cat > .env <<'ENV'
+ECR_REGISTRY=${ecr_registry}
+ECR_BACKEND_REPO=${backend_repo}
+ECR_FRONTEND_REPO=${frontend_repo}
+IMAGE_TAG=${image_tag}
+POSTGRES_USER=cashiery
+POSTGRES_PASSWORD=${db_password}
+POSTGRES_DB=cashiery
+JWT_SECRET=${jwt_secret}
+SEED_PRODUCTS=${seed_products}
+ENV
+chmod 600 .env
+
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+
+echo "bootstrap done — app on :${app_port}"
