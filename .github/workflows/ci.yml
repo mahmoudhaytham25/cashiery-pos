@@ -19,3 +19,41 @@ jobs:
       - name: Run tests
         working-directory: backend
         run: npx jest
+
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cashiery
+          POSTGRES_PASSWORD: cashiery-dev-password
+          POSTGRES_DB: cashiery
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cashiery -d cashiery"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Same DB_* vars database/db.js reads; scripts/migrate.js maps them
+      # to the DATABASE_URL node-pg-migrate expects.
+      DB_HOST: localhost
+      DB_USER: cashiery
+      DB_PASSWORD: cashiery-dev-password
+      DB_NAME: cashiery
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        working-directory: backend
+        run: npm install
+      - name: Smoke test migrations (up -> down -> up)
+        working-directory: backend
+        run: |
+          npm run migrate:up
+          npm run migrate:down
+          npm run migrate:up

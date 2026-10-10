@@ -16,9 +16,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-cashiery}
     volumes:
       - db_data:/var/lib/postgresql/data
-      # Init script: runs ONLY on first boot of a fresh volume. To re-seed:
-      #   docker compose down -v && docker compose up --build
-      - ./backend/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    # No initdb.d mount: the schema is managed by node-pg-migrate and applied
+    # by the backend container on every startup (see backend/docker-entrypoint.sh
+    # and backend/migrations/). To reset the DB entirely:
+    #   docker compose down -v && docker compose up --build
     # DB is not published to the host on purpose (avoids clashing with a
     # local PostgreSQL on port 5432). Uncomment if you need host access:
     # ports:
@@ -38,7 +39,8 @@ services:
     ports:
       - "${BACKEND_PORT:-5001}:5000"  # host :5000 is AirPlay Receiver on macOS
     depends_on:
-      - db  # pg Pool connects lazily and recovers once postgres is ready
+      - db  # backend/docker-entrypoint.sh waits for postgres, runs
+        # `npm run migrate:up`, then starts the server
 
   frontend:
     build: ./frontend

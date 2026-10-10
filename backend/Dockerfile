@@ -19,4 +19,6 @@ ENV NODE_ENV=production
 # App listens on process.env.PORT (default 5000)
 EXPOSE 5000
 
-CMD ["node", "index.js"]
+# docker-entrypoint.sh waits for Postgres, applies node-pg-migrate
+# migrations (npm run migrate:up), then execs `node index.js`.
+CMD ["sh", "docker-entrypoint.sh"]

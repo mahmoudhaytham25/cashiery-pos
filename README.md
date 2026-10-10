@@ -32,7 +32,7 @@ React Frontend (port 3000)  →  Express REST API (port 5000)  →  PostgreSQL
 
 ## Stack
 
-React · Node.js (Express) · PostgreSQL · JWT · bcrypt
+React · Node.js (Express) · PostgreSQL · node-pg-migrate · JWT · bcrypt
 
 ## Getting Started
 
@@ -43,7 +43,7 @@ docker compose up --build
 ```
 
 - Frontend: http://localhost:3000 · Backend API: http://localhost:5001 (host port is 5001 because macOS AirPlay Receiver occupies :5000; override with `BACKEND_PORT`)
-- PostgreSQL seeds itself from `backend/database/schema.sql` automatically — but only on first boot of a fresh data volume. To re-seed: `docker compose down -v && docker compose up --build`.
+- The backend container waits for Postgres, applies any pending database migrations (`node-pg-migrate`, see `backend/migrations/`), then starts the API — all handled by `backend/docker-entrypoint.sh` on every startup. To reset the DB entirely: `docker compose down -v && docker compose up --build`.
 - First run: register via the app's sign-up form (or `POST /api/auth/register`). The very first account is created as `admin` automatically — registration is admin-gated afterwards.
 - `JWT_SECRET` is required by the backend and falls back to a dev-only value in `docker-compose.yml`. For anything real, set it via `JWT_SECRET=your-secret docker compose up` or a `.env` file at the repo root.
 - DB credentials default to dev values; override with `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
@@ -57,8 +57,19 @@ docker compose up --build
 cd backend
 npm install
 cp .env.example .env   # fill in your DB credentials and JWT secret
-psql -d your_db -f database/schema.sql
+createdb your_db_name  # create the database (or: psql -c "CREATE DATABASE your_db_name;")
+npm run migrate:up     # create/update the schema via node-pg-migrate
 npm start              # http://localhost:5000
+```
+
+### Database migrations
+
+The schema is managed by [node-pg-migrate](https://salsita.github.io/node-pg-migrate/). Migration files in `backend/migrations/` are the source of truth (`backend/database/schema.sql` is kept as a reference only). Migrations use the same `DB_*` env vars as the app — `scripts/migrate.js` maps them to the `DATABASE_URL` node-pg-migrate expects, and a `DATABASE_URL` set directly takes precedence.
+
+```bash
+npm run migrate:up                 # apply all pending migrations
+npm run migrate:down               # roll back the last applied migration
+npm run migrate:create -- <name>   # scaffold a new migration file
 ```
 
 ### Frontend

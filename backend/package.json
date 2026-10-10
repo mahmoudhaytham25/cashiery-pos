@@ -89,6 +89,7 @@
     "negotiator": "^1.0.0",
     "node-addon-api": "^5.1.0",
     "node-fetch": "^2.7.0",
+    "node-pg-migrate": "^7.0.0",
     "nopt": "^5.0.0",
     "npmlog": "^5.0.1",
     "object-assign": "^4.1.1",
@@ -156,7 +157,10 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "jest"
+    "test": "jest",
+    "migrate:up": "node scripts/migrate.js up",
+    "migrate:down": "node scripts/migrate.js down",
+    "migrate:create": "node scripts/migrate.js create"
   },
   "jest": {
     "testEnvironment": "node",
