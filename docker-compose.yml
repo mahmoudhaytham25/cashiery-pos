@@ -1,6 +1,7 @@
 # Cashiery POS — full stack via Docker Compose.
 #   docker compose up --build
-# Frontend: http://localhost:3000  |  Backend API: http://localhost:5000
+# Frontend: http://localhost:3000  |  Backend API: http://localhost:5001
+# (5001 on the host because macOS AirPlay Receiver already owns :5000)
 #
 # Credentials below are DEV-ONLY defaults, overridable via shell env or a
 # .env file at the repo root (docker compose reads it automatically):
@@ -35,7 +36,7 @@ services:
       # `JWT_SECRET=... docker compose up` or a root .env file.
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me}
     ports:
-      - "5000:5000"
+      - "${BACKEND_PORT:-5001}:5000"  # host :5000 is AirPlay Receiver on macOS
     depends_on:
       - db  # pg Pool connects lazily and recovers once postgres is ready
 

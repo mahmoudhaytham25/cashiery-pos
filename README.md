@@ -42,7 +42,7 @@ React · Node.js (Express) · PostgreSQL · JWT · bcrypt
 docker compose up --build
 ```
 
-- Frontend: http://localhost:3000 · Backend API: http://localhost:5000
+- Frontend: http://localhost:3000 · Backend API: http://localhost:5001 (host port is 5001 because macOS AirPlay Receiver occupies :5000; override with `BACKEND_PORT`)
 - PostgreSQL seeds itself from `backend/database/schema.sql` automatically — but only on first boot of a fresh data volume. To re-seed: `docker compose down -v && docker compose up --build`.
 - `JWT_SECRET` is required by the backend and falls back to a dev-only value in `docker-compose.yml`. For anything real, set it via `JWT_SECRET=your-secret docker compose up` or a `.env` file at the repo root.
 - DB credentials default to dev values; override with `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.

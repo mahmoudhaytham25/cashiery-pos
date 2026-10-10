@@ -9,6 +9,11 @@ COPY package*.json ./
 RUN npm install
 
 COPY . .
+
+# Skip CRA's build-time eslint — without a lockfile, fresh npm resolution pulls
+# an eslint-plugin-jest that breaks eslint-config-react-app's jest overrides,
+# and linting adds nothing inside an image build.
+ENV DISABLE_ESLINT_PLUGIN=true
 RUN npm run build
 
 # ---- Serve stage ----
