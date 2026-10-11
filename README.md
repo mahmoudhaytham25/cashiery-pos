@@ -91,10 +91,11 @@ Production build: `npm run build` outputs static assets to `frontend/dist/` (pre
 
 ## Deployment — AWS (Terraform/Terragrunt)
 
-`infrastructure/` contains a complete IaC setup for running the app on AWS: one EC2 instance pulling pre-built images from ECR, deployed by a path-filtered CodeBuild pipeline. Four modules (`ecr`, `codebuild`, `compute`, `ci`) are wired via Terragrunt `dependency` blocks under `live/dev`.
+`infrastructure/` contains a complete IaC setup for running the app on AWS with **environment promotion**: pushes to `develop` build and deploy to a dev EC2 box; merging to `main` promotes the exact dev-verified images to a prod box via ECR manifest retagging — no rebuild. Four modules (`ecr`, `codebuild`, `compute`, `ci`) are wired via Terragrunt `dependency` blocks under `live/{shared,dev,prod}`.
 
 ```
-push to main → tests → diff paths → CodeBuild builds changed images → ECR → SSM redeploy on EC2
+push → develop → tests → diff paths → CodeBuild builds changed images → ECR (dev-*) → SSM redeploy dev box
+merge → main   → tests → CodeBuild retags dev-latest → prod-* (no rebuild) → SSM redeploy prod box
 ```
 
 - GitHub Actions authenticates via **OIDC** — no AWS keys stored in secrets

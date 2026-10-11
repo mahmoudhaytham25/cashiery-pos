@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
   backend-tests:
@@ -223,13 +223,15 @@ jobs:
         if: always()
         run: docker compose down -v
 
-  # Path-filtered deploy trigger: diffs the push range, then hands off to
+  # Path-filtered dev deploy: diffs the push range, then hands off to
   # CodeBuild, which clones the repo, builds+pushes each changed service
-  # image, and redeploys the EC2 box via SSM (all inside the buildspec).
+  # image (dev-<sha>, plus manifest-retagging the unchanged ones so the
+  # stack tag is always complete), moves dev-latest, and redeploys the dev
+  # box via SSM (all inside the buildspec).
   # Auth is OIDC — the role (AWS_DEPLOY_ROLE_ARN secret) is created by
-  # Terraform and only assumable from this repo's main branch.
-  deploy:
-    if: github.event_name == 'push'
+  # Terraform and assumable from this repo's deploy branches.
+  deploy-dev:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     needs: [backend-tests, frontend-build, frontend-tests, migrations, frontend-e2e, compose-smoke]
     runs-on: ubuntu-latest
     permissions:
@@ -255,7 +257,7 @@ jobs:
           fi
 
       # The AWS side only exists once the infrastructure/ Terraform is
-      # applied and the 3 repo entries are set — until then, skip instead
+      # applied and the repo entries are set — until then, skip instead
       # of failing on missing config (a service-code push is still a
       # green CI run without a deploy target).
       - name: Check deploy configuration
@@ -263,11 +265,11 @@ jobs:
         env:
           ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           REGION: ${{ vars.AWS_REGION }}
-          PROJECT: ${{ vars.CODEBUILD_PROJECT }}
+          PROJECT: ${{ vars.DEV_CODEBUILD_PROJECT }}
         run: |
           if [ -z "$ROLE_ARN" ] || [ -z "$REGION" ] || [ -z "$PROJECT" ]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "AWS deploy not configured (needs AWS_DEPLOY_ROLE_ARN secret + AWS_REGION/CODEBUILD_PROJECT vars) — skipping"
+            echo "AWS dev deploy not configured (needs AWS_DEPLOY_ROLE_ARN secret + AWS_REGION/DEV_CODEBUILD_PROJECT vars) — skipping"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
@@ -279,21 +281,75 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Trigger deploy build
+      - name: Trigger dev deploy build
         if: steps.changes.outputs.services != '' && steps.deploycfg.outputs.configured == 'true'
         run: |
           id=$(aws codebuild start-build \
-            --project-name "${{ vars.CODEBUILD_PROJECT }}" \
+            --project-name "${{ vars.DEV_CODEBUILD_PROJECT }}" \
             --environment-variables-override \
+              name=GIT_REF,value="$GITHUB_SHA" \
               name=CHANGED_SERVICES,value="${{ steps.changes.outputs.services }}" \
-              name=IMAGE_TAG,value="$GITHUB_SHA" \
+              name=IMAGE_TAG,value="dev-$GITHUB_SHA" \
+              name=LATEST_TAG,value="dev-latest" \
             --query 'build.id' --output text)
           # Fire-and-forget: verdict lives on the build itself.
           {
-            echo "deploy build started: \`$id\`"
-            echo "[build history](https://${{ vars.AWS_REGION }}.console.aws.amazon.com/codesuite/codebuild/projects/${{ vars.CODEBUILD_PROJECT }}/history)"
+            echo "dev deploy build started: \`$id\`"
+            echo "[build history](https://${{ vars.AWS_REGION }}.console.aws.amazon.com/codesuite/codebuild/projects/${{ vars.DEV_CODEBUILD_PROJECT }}/history)"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Skip — no service code changed
         if: steps.changes.outputs.services == ''
         run: echo "push touched no backend/ or frontend/ files — nothing to deploy"
+
+  # Prod promotion — the interesting half: merging to main does NOT rebuild.
+  # CodeBuild copies the dev-latest image manifests to prod-<sha>/prod-latest
+  # (batch-get-image + put-image) and redeploys the prod box — what was
+  # verified on dev is byte-for-byte what ships. needs: keeps the promote
+  # gated on a green test run too.
+  # `environment: production` optionally gates this on manual approval —
+  # add required reviewers under repo Settings → Environments.
+  deploy-prod:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+    needs: [backend-tests, frontend-build, frontend-tests, migrations, frontend-e2e, compose-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check deploy configuration
+        id: deploycfg
+        env:
+          ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          REGION: ${{ vars.AWS_REGION }}
+          PROJECT: ${{ vars.PROD_CODEBUILD_PROJECT }}
+        run: |
+          if [ -z "$ROLE_ARN" ] || [ -z "$REGION" ] || [ -z "$PROJECT" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "AWS prod deploy not configured (needs AWS_DEPLOY_ROLE_ARN secret + AWS_REGION/PROD_CODEBUILD_PROJECT vars) — skipping"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        if: steps.deploycfg.outputs.configured == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Trigger prod promote build
+        if: steps.deploycfg.outputs.configured == 'true'
+        run: |
+          id=$(aws codebuild start-build \
+            --project-name "${{ vars.PROD_CODEBUILD_PROJECT }}" \
+            --environment-variables-override \
+              name=PROMOTE_FROM_TAG,value="dev-latest" \
+              name=IMAGE_TAG,value="prod-$GITHUB_SHA" \
+              name=LATEST_TAG,value="prod-latest" \
+            --query 'build.id' --output text)
+          {
+            echo "prod promote build started: \`$id\`"
+            echo "[build history](https://${{ vars.AWS_REGION }}.console.aws.amazon.com/codesuite/codebuild/projects/${{ vars.PROD_CODEBUILD_PROJECT }}/history)"
+          } >> "$GITHUB_STEP_SUMMARY"

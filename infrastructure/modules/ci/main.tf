@@ -1,9 +1,10 @@
-# GitHub Actions OIDC — lets the deploy job authenticate via a short-lived
+# GitHub Actions OIDC — lets the deploy jobs authenticate via a short-lived
 # role session. No AWS keys are stored in GitHub; the role is assumable only
-# by workflows running on the configured repo's main branch.
+# by workflows running on the configured repo's deploy branches (main +
+# develop by default — one role serves the whole promotion pipeline).
 #
-# All heavy lifting (clone, docker build, ECR push, SSM redeploy) lives in
-# the CodeBuild project — this role only triggers and polls it.
+# All heavy lifting (clone, docker build, ECR push/retag, SSM redeploy) lives
+# in the CodeBuild projects — this role only triggers and polls them.
 
 locals {
   name = "${var.project}-${var.environment}"
@@ -33,7 +34,13 @@ data "aws_iam_policy_document" "github_actions_assume" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:ref:refs/heads/main"]
+      # Branch runs claim `ref:refs/heads/<branch>`; jobs that set
+      # `environment:` claim `environment:<name>` instead of a ref — both
+      # shapes must be trusted or the prod promote job can't assume the role.
+      values = concat(
+        [for b in var.deploy_branches : "repo:${var.github_repo}:ref:refs/heads/${b}"],
+        [for e in var.deploy_environments : "repo:${var.github_repo}:environment:${e}"],
+      )
     }
   }
 }
@@ -47,7 +54,7 @@ data "aws_iam_policy_document" "deploy" {
   statement {
     sid       = "RunBuilds"
     actions   = ["codebuild:StartBuild"]
-    resources = [var.codebuild_project_arn]
+    resources = var.codebuild_project_arns
   }
 }
 

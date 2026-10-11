@@ -1,0 +1,55 @@
+version: 0.2
+
+# Prod promote buildspec — inlined into the 'cashiery-pos-prod-build'
+# CodeBuild project by Terraform (NO_SOURCE, never clones: promotion is pure
+# ECR manifest copy + SSM redeploy, so the project runs unprivileged with no
+# docker daemon).
+#
+# The GitHub Actions deploy-prod job starts this build with env overrides:
+#   PROMOTE_FROM_TAG  source tag to promote (dev-latest — the image set last
+#                     verified on the dev box)
+#   IMAGE_TAG         stack tag to publish (prod-<sha>)
+#   LATEST_TAG        mutable env tag moved to the promoted images (prod-latest)
+# Project env provides: ECR_REGISTRY, ECR_BACKEND_REPO, ECR_FRONTEND_REPO,
+# INSTANCE_ID.
+#
+# Rendered through Terraform templatefile() — write $VAR, never $${VAR}.
+
+phases:
+  build:
+    commands:
+      - |
+        # Guard: before the first dev deploy, PROMOTE_FROM_TAG doesn't exist —
+        # succeed quietly instead of failing (there is simply nothing to ship).
+        missing=0
+        for repo in "$ECR_BACKEND_REPO" "$ECR_FRONTEND_REPO"; do
+          if ! aws ecr describe-images --repository-name "$repo" \
+              --image-ids "imageTag=$PROMOTE_FROM_TAG" > /dev/null 2>&1; then
+            echo "$repo:$PROMOTE_FROM_TAG not found"
+            missing=1
+          fi
+        done
+        if [ "$missing" = "1" ]; then
+          echo "nothing promoted yet — deploy to develop first"
+        else
+          for repo in "$ECR_BACKEND_REPO" "$ECR_FRONTEND_REPO"; do
+            echo "=== promoting $repo: $PROMOTE_FROM_TAG -> $IMAGE_TAG (+$LATEST_TAG)"
+            manifest=$(aws ecr batch-get-image --repository-name "$repo" \
+              --image-ids "imageTag=$PROMOTE_FROM_TAG" \
+              --query 'images[0].imageManifest' --output text)
+            aws ecr put-image --repository-name "$repo" \
+              --image-tag "$IMAGE_TAG" --image-manifest "$manifest" > /dev/null
+            aws ecr put-image --repository-name "$repo" \
+              --image-tag "$LATEST_TAG" --image-manifest "$manifest" > /dev/null
+          done
+          touch /tmp/promoted   # flag for post_build (env vars don't cross phases)
+        fi
+
+  post_build:
+    commands:
+      - |
+        if [ ! -f /tmp/promoted ]; then
+          echo "no promotion happened — skipping redeploy"
+          exit 0
+        fi
+        ${ssm_redeploy}

@@ -26,7 +26,19 @@ variable "github_repo" {
   default     = "mahmoudhaytham25/cashiery-pos"
 }
 
-variable "codebuild_project_arn" {
-  description = "CodeBuild project the deploy job starts and polls (dependency: codebuild module output)."
-  type        = string
+variable "codebuild_project_arns" {
+  description = "CodeBuild projects the deploy jobs may start (dev build + prod promote — dependencies: codebuild module outputs)."
+  type        = list(string)
+}
+
+variable "deploy_branches" {
+  description = "GitHub branches whose Actions runs may assume the deploy role (used in the OIDC trust policy)."
+  type        = list(string)
+  default     = ["main", "develop"]
+}
+
+variable "deploy_environments" {
+  description = "GitHub Actions environments whose runs may assume the deploy role — jobs that set `environment:` claim an `environment:<name>` sub instead of a ref."
+  type        = list(string)
+  default     = ["production"]
 }

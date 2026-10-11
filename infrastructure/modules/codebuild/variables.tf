@@ -55,3 +55,15 @@ variable "instance_id" {
   description = "EC2 instance the buildspec redeploys via SSM (dependency: compute module output)."
   type        = string
 }
+
+variable "buildspec_file" {
+  description = "Buildspec filename in this module — 'buildspec.deploy.yml' (dev: clone, build, push, redeploy) or 'buildspec.promote.yml' (prod: ECR retag + redeploy)."
+  type        = string
+  default     = "buildspec.deploy.yml"
+}
+
+variable "privileged" {
+  description = "CodeBuild privileged mode — required for docker builds. The promote project only copies ECR manifests, so it stays false."
+  type        = bool
+  default     = true
+}

@@ -1,37 +1,68 @@
 version: 0.2
 
-# Deploy buildspec — inlined into the 'cashiery-pos-<env>-build' CodeBuild
+# Dev deploy buildspec — inlined into the 'cashiery-pos-dev-build' CodeBuild
 # project by Terraform (project source is NO_SOURCE; the repo is cloned below).
 #
 # The GitHub Actions deploy job detects which service dirs changed and starts
 # this build with env overrides:
-#   CHANGED_SERVICES  space-separated service dirs ("backend", "frontend", or both)
-#   IMAGE_TAG         tag to publish (the push commit SHA; 'latest' also updated)
+#   GIT_REF           commit to check out and build (the push SHA)
+#   IMAGE_TAG         stack tag to publish (dev-<sha>)
+#   LATEST_TAG        mutable env tag moved to the new images (dev-latest) —
+#                     the promote pipeline reads this, never guesses a sha
+#   CHANGED_SERVICES  space-separated service dirs ("backend", "frontend", both)
 # Project env provides: REPO_URL, ECR_REGISTRY, ECR_BACKEND_REPO,
 # ECR_FRONTEND_REPO, INSTANCE_ID.
+#
+# Rendered through Terraform templatefile() — write $VAR, never $${VAR}.
 
 phases:
   pre_build:
     commands:
       - git clone --quiet "$REPO_URL" src
-      - cd src && git checkout --quiet "$IMAGE_TAG"
-      - echo "deploying [$CHANGED_SERVICES] at $IMAGE_TAG"
+      - cd src && git checkout --quiet "$GIT_REF"
+      - echo "deploying [$CHANGED_SERVICES] at $GIT_REF -> $IMAGE_TAG"
       - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
   build:
     commands:
       - |
         cd src   # phases run separate shells — pre_build's cd doesn't persist
-        for svc in $CHANGED_SERVICES; do
+        for svc in backend frontend; do
           case "$svc" in
             backend)  repo="$ECR_BACKEND_REPO" ;;
             frontend) repo="$ECR_FRONTEND_REPO" ;;
-            *) echo "unknown service '$svc'"; exit 1 ;;
           esac
+
+          changed=0
+          for c in $CHANGED_SERVICES; do [ "$c" = "$svc" ] && changed=1; done
+
+          # The box pulls BOTH repos at $IMAGE_TAG, so unchanged services
+          # still need the new stack tag — copy the verified manifest
+          # forward instead of rebuilding (or the pull fails on a
+          # single-service push).
+          if [ "$changed" = "0" ]; then
+            manifest=$(aws ecr batch-get-image --repository-name "$repo" \
+              --image-ids "imageTag=$LATEST_TAG" \
+              --query 'images[0].imageManifest' --output text 2>/dev/null || true)
+            if [ -n "$manifest" ] && [ "$manifest" != "None" ]; then
+              echo "=== reusing $svc: $LATEST_TAG -> $IMAGE_TAG"
+              aws ecr put-image --repository-name "$repo" \
+                --image-tag "$IMAGE_TAG" --image-manifest "$manifest" > /dev/null
+              continue
+            fi
+            echo "=== $svc unchanged but no $LATEST_TAG image to reuse — building"
+          fi
+
           echo "=== building $svc -> $ECR_REGISTRY/$repo:$IMAGE_TAG"
-          docker build -t "$ECR_REGISTRY/$repo:$IMAGE_TAG" -t "$ECR_REGISTRY/$repo:latest" "$svc"
+          docker build -t "$ECR_REGISTRY/$repo:$IMAGE_TAG" "$svc"
           docker push "$ECR_REGISTRY/$repo:$IMAGE_TAG"
-          docker push "$ECR_REGISTRY/$repo:latest"
+
+          # Move the mutable env tag — manifest retag, no re-push.
+          manifest=$(aws ecr batch-get-image --repository-name "$repo" \
+            --image-ids "imageTag=$IMAGE_TAG" \
+            --query 'images[0].imageManifest' --output text)
+          aws ecr put-image --repository-name "$repo" \
+            --image-tag "$LATEST_TAG" --image-manifest "$manifest" > /dev/null
         done
         touch /tmp/deployed   # flag for post_build (env vars don't cross phases)
 
@@ -42,25 +73,4 @@ phases:
           echo "build phase failed or ran nothing — skipping redeploy"
           exit 0
         fi
-        params=$(printf '{"commands":[
-          "set -e",
-          "cd /opt/cashiery-pos",
-          "git pull --ff-only",
-          "sed -i s/^IMAGE_TAG=.*/IMAGE_TAG=%s/ .env",
-          "aws ecr get-login-password --region %s | docker login --username AWS --password-stdin %s",
-          "docker compose -f docker-compose.prod.yml pull",
-          "docker compose -f docker-compose.prod.yml up -d"
-        ]}' "$IMAGE_TAG" "$AWS_DEFAULT_REGION" "$ECR_REGISTRY" | tr -d '\n')
-        cmd=$(aws ssm send-command \
-          --instance-ids "$INSTANCE_ID" \
-          --document-name AWS-RunShellScript \
-          --comment "deploy $IMAGE_TAG" \
-          --parameters "$params" \
-          --query 'Command.CommandId' --output text)
-        echo "ssm command: $cmd"
-        while :; do
-          st=$(aws ssm get-command-invocation --command-id "$cmd" --instance-id "$INSTANCE_ID" --query 'Status' --output text)
-          case "$st" in Pending|InProgress|Delayed) sleep 5 ;; *) break ;; esac
-        done
-        echo "ssm -> $st"
-        [ "$st" = "Success" ]
+        ${ssm_redeploy}

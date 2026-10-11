@@ -1,8 +1,12 @@
-# One parameterized build project. The GitHub Actions deploy job detects
-# which service directories changed in a push and starts this build with
-# CHANGED_SERVICES + IMAGE_TAG env overrides. The buildspec (inlined below)
-# clones the repo, builds+pushes each changed image to ECR, then redeploys
-# the EC2 box over SSM.
+# One parameterized build project per environment, same module:
+#   dev  — buildspec.deploy.yml:  clones the repo, builds+pushes changed
+#          service images to ECR, then redeploys the box over SSM.
+#   prod — buildspec.promote.yml: retags the dev-verified manifests
+#          (batch-get-image + put-image, NO rebuild) and redeploys.
+# The GitHub Actions deploy jobs pick the project and pass the env overrides
+# (GIT_REF/IMAGE_TAG/CHANGED_SERVICES for dev, PROMOTE_FROM_TAG/IMAGE_TAG for
+# prod). The SSM redeploy block is shared — assets/ssm-redeploy.sh is injected
+# into both buildspecs via templatefile().
 
 locals {
   name = "${var.project}-${var.environment}"
@@ -60,6 +64,21 @@ data "aws_iam_policy_document" "codebuild" {
     ]
   }
 
+  # Promotion reads manifests instead of rebuilding (batch-get-image →
+  # put-image), and the deploy buildspec reuses them to carry the stack tag
+  # onto services that didn't change in a push.
+  statement {
+    sid = "ReadImages"
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:DescribeImages",
+    ]
+    resources = [
+      var.backend_repository_arn,
+      var.frontend_repository_arn,
+    ]
+  }
+
   statement {
     sid     = "SendDeployCommand"
     actions = ["ssm:SendCommand"]
@@ -91,11 +110,16 @@ resource "aws_codebuild_project" "app" {
   service_role  = aws_iam_role.codebuild.arn
   build_timeout = 30
 
-  # The buildspec clones the repo itself (public HTTPS, no creds) — this
-  # avoids GitHub-OAuth/CodeConnections plumbing entirely.
+  # The deploy buildspec clones the repo itself (public HTTPS, no creds) —
+  # this avoids GitHub-OAuth/CodeConnections plumbing entirely. The promote
+  # buildspec never clones; it only copies ECR manifests.
   source {
-    type      = "NO_SOURCE"
-    buildspec = file("${path.module}/buildspec.deploy.yml")
+    type = "NO_SOURCE"
+    buildspec = templatefile("${path.module}/${var.buildspec_file}", {
+      # Shared SSM redeploy block — keep the indent in step with the
+      # `${ssm_redeploy}` line's depth inside the yaml block scalar.
+      ssm_redeploy = indent(8, chomp(file("${path.module}/assets/ssm-redeploy.sh")))
+    })
   }
 
   artifacts {
@@ -107,7 +131,7 @@ resource "aws_codebuild_project" "app" {
     compute_type                = "BUILD_GENERAL1_SMALL"
     image                       = "aws/codebuild/standard:7.0"
     image_pull_credentials_type = "CODEBUILD"
-    privileged_mode             = true # required for docker build
+    privileged_mode             = var.privileged # docker build needs it; promote (retag-only) doesn't
 
     environment_variable {
       name  = "REPO_URL"
