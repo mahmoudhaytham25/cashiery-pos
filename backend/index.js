@@ -14,9 +14,10 @@ const app = express();
 // Middleware — browser traffic is same-origin behind the compose nginx proxy,
 // so a single allowed origin (overridable via ALLOWED_ORIGIN) is enough.
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || 'http://localhost:3000' }));
-// nginx forwards X-Forwarded-For (see frontend/nginx.conf) — trusting one hop
-// gives the auth rate limiter per-client buckets instead of one shared bucket.
-app.set('trust proxy', 1);
+// 'trust proxy' stays off: the backend port is also published directly for
+// dev, so trusting X-Forwarded-For would let a direct caller spoof req.ip
+// and defeat the auth rate limiter. Proxied traffic buckets under the
+// nginx IP instead — one shared bucket, acceptable single-tenant.
 app.use(express.json());
 
 // Import routes
