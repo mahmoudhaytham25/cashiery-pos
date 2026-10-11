@@ -1,6 +1,17 @@
 # Cashiery — POS & Inventory Management System
 
 [![CI](https://github.com/mahmoudhaytham25/cashiery-pos/actions/workflows/ci.yml/badge.svg)](https://github.com/mahmoudhaytham25/cashiery-pos/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+![Node 24](https://img.shields.io/badge/node-24-339933?logo=nodedotjs&logoColor=white)
+
+![React 18](https://img.shields.io/badge/react-18-61dafb?logo=react&logoColor=black)
+![Vite 8](https://img.shields.io/badge/vite-8-646cff?logo=vite&logoColor=white)
+![Express 5](https://img.shields.io/badge/express-5-000000?logo=express&logoColor=white)
+![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169e1?logo=postgresql&logoColor=white)
+![Docker Compose](https://img.shields.io/badge/docker-compose-2496ed?logo=docker&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-jest%20%C2%B7%20vitest%20%C2%B7%20playwright-2ea44f)
+![AWS](https://img.shields.io/badge/aws-ec2%20%C2%B7%20ecr%20%C2%B7%20codebuild%20%C2%B7%20ssm-232f3e?logo=amazonwebservices&logoColor=white)
+![IaC](https://img.shields.io/badge/iac-terraform%20%2B%20terragrunt-844fba?logo=terraform&logoColor=white)
 
 A full-stack point-of-sale and inventory management web application with dual roles: a cashier interface for day-to-day sales and a manager dashboard for inventory control and reporting.
 
