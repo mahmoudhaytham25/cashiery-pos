@@ -159,6 +159,70 @@ jobs:
         working-directory: frontend
         run: npx playwright test
 
+  # Full-stack docker smoke: builds the real images, brings the compose
+  # stack up, and curls through the nginx /api proxy — catches broken
+  # Dockerfiles, nginx config, entrypoints, and compose wiring that the
+  # unit suites can't see. Compose's dev defaults cover every env var.
+  compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build all images
+        run: docker compose build
+      - name: Start the stack
+        run: docker compose up -d
+      # The proxied health endpoint is the wait target — one URL proves
+      # nginx is up, /api forwards to the backend, the backend booted, and
+      # its entrypoint ran migrations against postgres.
+      - name: Wait for healthy services
+        run: |
+          for i in $(seq 1 90); do
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/health || true)" = "200" ]; then
+              echo "stack healthy after ~$((i * 2))s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "stack did not become healthy"
+          docker compose ps
+          docker compose logs --tail 60
+          exit 1
+      - name: Smoke assertions
+        run: |
+          set -e
+          # Static SPA serves with the hardened CSP.
+          curl -sfI http://localhost:3000/ | \
+            grep -i "content-security-policy:.*connect-src 'self'"
+
+          # /api is proxied same-origin through nginx to the backend.
+          curl -sf http://localhost:3000/api/health | grep -q '"status":"OK"'
+
+          # The backend's own published port still answers (dev path).
+          curl -sf http://localhost:5001/api/health | grep -q '"status":"OK"'
+
+          # Full auth round-trip through the proxy: the first-ever
+          # register is the unauthenticated admin bootstrap, then login
+          # returns a signed JWT — JSON through nginx -> backend -> pg.
+          curl -sf -X POST http://localhost:3000/api/auth/register \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"smoke-admin","password":"smoke-pass-123","role":"admin"}' | \
+            grep -q 'User created'
+          curl -sf -X POST http://localhost:3000/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"smoke-admin","password":"smoke-pass-123"}' | \
+            grep -q '"token"'
+
+          # Postgres must not be published on the host.
+          if curl -sf --max-time 3 http://localhost:5432 >/dev/null 2>&1; then
+            echo "postgres unexpectedly reachable from the host"
+            exit 1
+          fi
+
+          echo "all smoke assertions passed"
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
   # Path-filtered deploy trigger: diffs the push range, then hands off to
   # CodeBuild, which clones the repo, builds+pushes each changed service
   # image, and redeploys the EC2 box via SSM (all inside the buildspec).
@@ -166,7 +230,7 @@ jobs:
   # Terraform and only assumable from this repo's main branch.
   deploy:
     if: github.event_name == 'push'
-    needs: [backend-tests, frontend-build, frontend-tests, migrations, frontend-e2e]
+    needs: [backend-tests, frontend-build, frontend-tests, migrations, frontend-e2e, compose-smoke]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
