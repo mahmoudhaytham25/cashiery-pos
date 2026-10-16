@@ -18,3 +18,5 @@
 *.tfstate
 *.tfstate.*
 *.tfplan
+
+.DS_Store
