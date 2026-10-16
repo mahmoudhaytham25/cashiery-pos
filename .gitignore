@@ -20,3 +20,6 @@
 *.tfplan
 
 .DS_Store
+
+# Local interview prep notes — never commit
+INTERVIEW_CHEATSHEET.md
